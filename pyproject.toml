@@ -1,0 +1,27 @@
+[project]
+name = "wyoming-dotstts"
+version = "0.1.0"
+description = "Wyoming protocol server for rednote-hilab dots.tts"
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    "fastapi>=0.110.0,<1",
+    "numpy>=2.2.6,<3",
+    "soundfile>=0.13.1,<1",
+    "uvicorn[standard]>=0.29.0,<1",
+    "wyoming>=1.8.0,<2",
+    "dots.tts @ git+https://github.com/rednote-hilab/dots.tts.git",
+]
+
+[project.scripts]
+wyoming-dotstts = "dotstts_wyoming.__main__:main"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["dotstts_wyoming"]
+
+[tool.setuptools.package-data]
+dotstts_wyoming = ["templates/*.html"]

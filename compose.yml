@@ -1,0 +1,26 @@
+services:
+  wyoming-dotstts:
+    build: .
+    container_name: wyoming-dotstts
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "0.0.0.0:10201:10201"
+      - "0.0.0.0:8180:8180"
+    networks:
+      - bridge-network
+    volumes:
+      - ./data/models:/data/models
+      - ./data/speakers:/data/speakers
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [ gpu ]
+
+networks:
+  bridge-network:
+    external: true

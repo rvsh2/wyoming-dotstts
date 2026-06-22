@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>wyoming-dotstts</title>
+    <style>
+      body {
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        margin: 2rem;
+        color: #1f2937;
+        background: #f8fafc;
+      }
+      main {
+        max-width: 760px;
+      }
+      code {
+        background: #e5e7eb;
+        padding: 0.1rem 0.3rem;
+        border-radius: 4px;
+      }
+      textarea, input, button {
+        font: inherit;
+      }
+      textarea, input {
+        box-sizing: border-box;
+        display: block;
+        width: 100%;
+        margin: 0.5rem 0 1rem;
+        padding: 0.65rem;
+      }
+      button {
+        padding: 0.65rem 1rem;
+      }
+      pre {
+        white-space: pre-wrap;
+        background: #111827;
+        color: #f9fafb;
+        padding: 1rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>wyoming-dotstts</h1>
+      <p>Model: <code>__MODEL__</code></p>
+      <p>Default voice: <code>__VOICE__</code></p>
+      <label for="voice">Voice</label>
+      <input id="voice" name="voice" placeholder="voice profile name">
+      <label for="text">Text</label>
+      <textarea id="text" rows="5">Hello from dots.tts.</textarea>
+      <button id="send">Synthesize</button>
+      <pre id="result"></pre>
+    </main>
+    <script>
+      document.getElementById("send").addEventListener("click", async () => {
+        const response = await fetch("/synthesize", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({
+            voice: document.getElementById("voice").value || null,
+            text: document.getElementById("text").value
+          })
+        });
+        document.getElementById("result").textContent = JSON.stringify(await response.json(), null, 2);
+      });
+    </script>
+  </body>
+</html>

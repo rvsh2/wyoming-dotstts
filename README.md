@@ -59,9 +59,20 @@ Important environment variables:
 - `DOTSTTS_NUM_STEPS`, default `4`
 - `DOTSTTS_GUIDANCE_SCALE`, default `1.2`; accepted but ignored by `dots.tts-mf`
 - `DOTSTTS_SEED`
-- `DOTSTTS_LANGUAGE`
+- `DOTSTTS_LANGUAGE` — language advertised to clients (default `pl`). Home Assistant's TTS
+  entity needs at least one announced language to register, so the server always advertises
+  this (and at least one voice) even before a profile exists.
+- `DOTSTTS_DEFAULT_VOICE` — voice profile used by default / for warmup
 - `DOTSTTS_NORMALIZE_TEXT`
 - `DOTSTTS_OPTIMIZE`
+- `DOTSTTS_NO_WARMUP` — set to `1` to skip the startup warmup (see below)
+
+## Startup warmup
+
+On startup, after loading the model, the server runs one short **warmup synthesis** (using the
+default/first voice profile) so the *first* real request isn't slow — a cold synthesis pays
+~30 s of CUDA kernel/graph compilation, which the warmup moves to startup. Disable with
+`--no-warmup` / `DOTSTTS_NO_WARMUP=1`. Warmup is skipped if no voice profile exists.
 
 ## Tests
 

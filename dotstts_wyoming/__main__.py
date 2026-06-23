@@ -6,13 +6,14 @@ import argparse
 import asyncio
 import logging
 import os
+import time
 from functools import partial
 from typing import Optional
 
 from . import __version__
 from .handler import DotsTtsEventHandler
 from .speaker_store import SpeakerStore
-from .synthesizer import DEFAULT_MODEL, DotsTtsSynthesizer
+from .synthesizer import DEFAULT_MODEL, DotsTtsSynthesizer, SynthesisOptions
 from .wyoming_protocol import (
     AsyncServer,
     Attribution,
@@ -40,7 +41,7 @@ def _env_optional_int(name: str) -> int | None:
     return int(value)
 
 
-def _voice_entry(name: str) -> TtsVoice:
+def _voice_entry(name: str, languages: list[str]) -> TtsVoice:
     return TtsVoice(
         name=name,
         description=name,
@@ -50,12 +51,19 @@ def _voice_entry(name: str) -> TtsVoice:
         ),
         installed=True,
         version=None,
-        languages=[],
+        languages=languages,
     )
 
 
 def build_info(args: argparse.Namespace, synthesizer: DotsTtsSynthesizer) -> Info:
-    voices = [_voice_entry(name) for name in synthesizer.available_voices()]
+    # Home Assistant's TTS entity requires at least one announced language to set
+    # _attr_default_language; without it the entity fails to register. dots.tts is
+    # multilingual, so default to the configured language (or "pl") if none given.
+    languages = [args.language] if args.language else ["pl"]
+    # Always advertise at least one voice, even when no reference prompts exist on
+    # disk, so HA can create the entity.
+    names = synthesizer.available_voices() or [args.voice or "default"]
+    voices = [_voice_entry(name, languages) for name in names]
     return Info(
         tts=[
             TtsProgram(
@@ -101,6 +109,12 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         default=_env_bool("DOTSTTS_NORMALIZE_TEXT", False),
     )
     parser.add_argument("--optimize", action="store_true", default=_env_bool("DOTSTTS_OPTIMIZE", False))
+    parser.add_argument(
+        "--no-warmup",
+        action="store_true",
+        default=_env_bool("DOTSTTS_NO_WARMUP", False),
+        help="Skip the startup warmup synthesis (warmup avoids a slow first request).",
+    )
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--samples-per-chunk", type=int, default=1024)
     parser.add_argument("--no-streaming", action="store_true")
@@ -146,6 +160,30 @@ async def serve(args: argparse.Namespace) -> None:
     SpeakerStore(args.speaker_dir).ensure_default_profile_hint(args.voice)
     synthesizer.load()
     info = build_info(args, synthesizer)
+
+    # Warm up the model so the FIRST real request isn't slow (cold synthesis can
+    # take ~30s while CUDA kernels/graphs compile). Blocks startup until done.
+    if not args.no_warmup:
+        warm_voices = synthesizer.available_voices()
+        if warm_voices:
+            try:
+                _t = time.perf_counter()
+                synthesizer.synthesize(
+                    "Rozgrzewka.",
+                    voice_name=warm_voices[0],
+                    options=SynthesisOptions(
+                        num_steps=args.num_steps,
+                        guidance_scale=args.guidance_scale,
+                        seed=args.seed,
+                        language=args.language,
+                    ),
+                )
+                LOGGER.info("Warmup synthesis done in %.1fs (voice=%s)", time.perf_counter() - _t, warm_voices[0])
+            except Exception as exc:  # noqa: BLE001 - warmup must never block serving
+                LOGGER.warning("Warmup synthesis failed (continuing): %s", exc)
+        else:
+            LOGGER.info("Warmup skipped: no voice profiles available")
+
     server = AsyncServer.from_uri(args.uri)
 
     LOGGER.info("Model: %s", args.model)

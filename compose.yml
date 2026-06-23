@@ -17,8 +17,10 @@ services:
       resources:
         reservations:
           devices:
+            # Pinned to GPU1 to balance speech load off GPU0 (transcribe stays on
+            # GPU0), giving the LLM even headroom across both cards.
             - driver: nvidia
-              count: 1
+              device_ids: ['1']
               capabilities: [ gpu ]
 
 networks:

@@ -5,10 +5,12 @@ Wyoming TTS server for Home Assistant backed by `rednote-hilab/dots.tts`.
 ## What It Does
 
 - exposes Wyoming TTS on port `10201`
-- exposes optional HTTP debug on port `8180`
+- exposes optional HTTP debug on port `8180` (its failure never takes the Wyoming service down)
 - uses `rednote-hilab/dots.tts-mf` by default
 - publishes local voice-cloning profiles from `data/speakers`
 - uses native `generate_stream` for streaming Wyoming requests
+- requests without a voice fall back to `DOTSTTS_DEFAULT_VOICE`, then to the first profile
+- streamed text is split into sentences without breaking abbreviations (`np.`, `Dr.`, initials)
 
 ## Voice Profiles
 
@@ -20,6 +22,10 @@ data/speakers/mira/prompt.txt
 ```
 
 If `reference.wav` is missing but other `.wav` files exist, the first sorted `.wav` file is used. Profiles without `prompt.txt` are not published and appear under `invalid` in `/health`.
+
+The voice list is re-scanned on every Wyoming `describe`, so profiles dropped into the
+(live-mounted) speaker dir show up in Home Assistant without a container restart — just
+reload the Wyoming integration or wait for the next describe.
 
 ## Docker
 

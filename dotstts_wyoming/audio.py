@@ -4,16 +4,14 @@ from __future__ import annotations
 
 import io
 import wave
-from array import array
 from typing import Iterable
+
+import numpy as np
 
 
 def float32_to_pcm16(audio: Iterable[float]) -> bytes:
-    pcm = array("h")
-    for sample in audio:
-        clipped = max(-1.0, min(1.0, float(sample)))
-        pcm.append(int(clipped * 32767.0))
-    return pcm.tobytes()
+    samples = np.asarray(audio, dtype=np.float32)
+    return (np.clip(samples, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()
 
 
 def pcm16_wav_bytes(audio: Iterable[float], sample_rate: int = 48000, channels: int = 1) -> bytes:

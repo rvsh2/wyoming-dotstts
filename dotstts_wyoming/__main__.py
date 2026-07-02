@@ -20,11 +20,18 @@ from .wyoming_protocol import (
     Info,
     TtsProgram,
     TtsVoice,
-    WYOMING_AVAILABLE,
 )
 
 
 LOGGER = logging.getLogger("dotstts-wyoming")
+
+# dots.tts is multilingual and auto-detects the input language, so when no
+# language is configured, advertise a broad set instead of pinning one — Home
+# Assistant refuses to pair a pipeline whose language the entity doesn't list.
+DEFAULT_LANGUAGES = [
+    "en", "pl", "de", "fr", "es", "it", "pt", "nl", "cs", "sk",
+    "uk", "ru", "zh", "ja", "ko",
+]
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -57,9 +64,8 @@ def _voice_entry(name: str, languages: list[str]) -> TtsVoice:
 
 def build_info(args: argparse.Namespace, synthesizer: DotsTtsSynthesizer) -> Info:
     # Home Assistant's TTS entity requires at least one announced language to set
-    # _attr_default_language; without it the entity fails to register. dots.tts is
-    # multilingual, so default to the configured language (or "pl") if none given.
-    languages = [args.language] if args.language else ["pl"]
+    # _attr_default_language; without it the entity fails to register.
+    languages = [args.language] if args.language else DEFAULT_LANGUAGES
     # Always advertise at least one voice, even when no reference prompts exist on
     # disk, so HA can create the entity.
     names = synthesizer.available_voices() or [args.voice or "default"]
@@ -136,13 +142,19 @@ async def _serve_http_debug(
     http_server.service = synthesizer
     config = uvicorn.Config(http_server.app, host=host, port=port, log_level="info")
     server = uvicorn.Server(config)
-    await server.serve()
+    # A debug-only endpoint must never take the Wyoming TTS service down with
+    # it — e.g. a busy port would otherwise crash-loop the whole container.
+    # uvicorn raises SystemExit on bind failure, so catch that too (but let
+    # CancelledError through for clean shutdown).
+    try:
+        await server.serve()
+    except asyncio.CancelledError:
+        raise
+    except (Exception, SystemExit):
+        LOGGER.exception("HTTP debug server failed; continuing without it")
 
 
 async def serve(args: argparse.Namespace) -> None:
-    if not WYOMING_AVAILABLE:
-        raise RuntimeError("The 'wyoming' package is not installed. Install project dependencies first.")
-
     synthesizer = DotsTtsSynthesizer(
         model_name=args.model,
         default_voice=args.voice,
@@ -159,7 +171,10 @@ async def serve(args: argparse.Namespace) -> None:
     )
     SpeakerStore(args.speaker_dir).ensure_default_profile_hint(args.voice)
     synthesizer.load()
-    info = build_info(args, synthesizer)
+    # Passed as a factory so the voice list is re-scanned on every Describe:
+    # profiles dropped into the (live-mounted) speaker dir appear in Home
+    # Assistant without a container restart.
+    info_factory = partial(build_info, args, synthesizer)
 
     # Warm up the model so the FIRST real request isn't slow (cold synthesis can
     # take ~30s while CUDA kernels/graphs compile). Blocks startup until done.
@@ -191,7 +206,7 @@ async def serve(args: argparse.Namespace) -> None:
     LOGGER.info("Speaker dir: %s", args.speaker_dir)
     LOGGER.info("Streaming: %s", not args.no_streaming)
 
-    tasks = [asyncio.create_task(server.run(partial(DotsTtsEventHandler, info, args, synthesizer)))]
+    tasks = [asyncio.create_task(server.run(partial(DotsTtsEventHandler, info_factory, args, synthesizer)))]
 
     if args.http_host:
         LOGGER.info("HTTP debug: http://%s:%s", args.http_host, args.http_port)

@@ -18,7 +18,6 @@ from .wyoming_protocol import (
     Describe,
     Error,
     Event,
-    Info,
     Synthesize,
     SynthesizeChunk,
     SynthesizeStart,
@@ -41,7 +40,7 @@ def _next_chunk(iterator):
 class DotsTtsEventHandler(AsyncEventHandler):
     def __init__(
         self,
-        wyoming_info: Info,
+        wyoming_info,
         cli_args: argparse.Namespace,
         synthesizer: DotsTtsSynthesizer,
         *args,
@@ -50,7 +49,9 @@ class DotsTtsEventHandler(AsyncEventHandler):
         super().__init__(*args, **kwargs)
         self.cli_args = cli_args
         self.synthesizer = synthesizer
-        self.wyoming_info_event = wyoming_info.event()
+        # Info instance or a zero-arg factory. A factory is rebuilt on every
+        # Describe so voice profiles added at runtime show up without a restart.
+        self._wyoming_info = wyoming_info
         self._streaming = False
         self._voice_name: Optional[str] = None
         self._options = SynthesisOptions()
@@ -63,14 +64,17 @@ class DotsTtsEventHandler(AsyncEventHandler):
     async def handle_event(self, event: Event) -> bool:
         try:
             if Describe.is_type(event.type):
-                await self.write_event(self.wyoming_info_event)
+                info = self._wyoming_info() if callable(self._wyoming_info) else self._wyoming_info
+                await self.write_event(info.event())
                 return True
 
             if Synthesize.is_type(event.type):
                 synthesize = Synthesize.from_event(event)
                 if self._streaming:
                     return True
-                return await self._handle_full_synthesize(synthesize)
+                return await self._handle_full_synthesize(
+                    synthesize, voice_name=self._voice_name_from_event(event)
+                )
 
             if self.cli_args.no_streaming:
                 return True
@@ -80,7 +84,7 @@ class DotsTtsEventHandler(AsyncEventHandler):
                 self._streaming = True
                 self._stream_started = False
                 self._chunker = SentenceChunker()
-                self._voice_name = getattr(stream_start.voice, "name", None)
+                self._voice_name = self._voice_name_from_event(event)
                 self._options = self._options_from_context(getattr(stream_start, "context", None))
                 return True
 
@@ -106,10 +110,36 @@ class DotsTtsEventHandler(AsyncEventHandler):
             return True
         except Exception as err:
             await self.write_event(Error(text=str(err), code=err.__class__.__name__).event())
+            # If the error happened mid-stream, close the stream properly and
+            # reset state: the connection is persistent, and a stuck
+            # _streaming=True would silently swallow every later synthesize
+            # while Home Assistant waits forever for synthesize-stopped.
+            if self._streaming:
+                if self._stream_started:
+                    await self.write_event(AudioStop().event())
+                    self._stream_started = False
+                await self.write_event(SynthesizeStopped().event())
+                self._streaming = False
+                self._voice_name = None
+                self._options = SynthesisOptions()
+                self._chunker = SentenceChunker()
             return True
 
-    async def _handle_full_synthesize(self, synthesize: Synthesize) -> bool:
-        voice_name = getattr(synthesize.voice, "name", None)
+    @staticmethod
+    def _voice_name_from_event(event: Event) -> Optional[str]:
+        """Voice profile name from the raw event, or None.
+
+        Reads event.data directly because wyoming's SynthesizeVoice.from_dict
+        turns a language-only voice ({"language": "pl"}) into name="pl", which
+        would then be looked up as a (nonexistent) profile directory instead of
+        falling back to the default voice.
+        """
+        voice = (event.data or {}).get("voice")
+        if isinstance(voice, dict):
+            return voice.get("name")
+        return getattr(voice, "name", None)
+
+    async def _handle_full_synthesize(self, synthesize: Synthesize, *, voice_name: Optional[str]) -> bool:
         options = self._options_from_context(getattr(synthesize, "context", None))
         loop = asyncio.get_running_loop()
         async with self.synthesizer.get_async_lock():

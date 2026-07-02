@@ -76,7 +76,16 @@ class SpeakerStore:
     def get_profile(self, name: str | None, default_name: str | None = None) -> SpeakerProfile:
         requested = name or default_name
         if not requested:
-            raise SpeakerProfileNotFoundError("No voice profile was requested.")
+            # No voice requested and no default configured: fall back to the
+            # first valid profile so out-of-the-box requests (HA pipelines with
+            # no voice picked) still speak.
+            profiles = self.list_profiles()
+            if profiles:
+                return profiles[0]
+            raise SpeakerProfileNotFoundError(
+                "No voice profile was requested and none exist. "
+                "Create data/speakers/<voice>/reference.wav and data/speakers/<voice>/prompt.txt."
+            )
 
         # Direct lookup instead of scanning every profile; guard against path
         # traversal since the voice name comes from the client (reject anything

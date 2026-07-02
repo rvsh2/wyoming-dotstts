@@ -59,10 +59,12 @@ Important environment variables:
 - `DOTSTTS_NUM_STEPS`, default `4`
 - `DOTSTTS_GUIDANCE_SCALE`, default `1.2`; accepted but ignored by `dots.tts-mf`
 - `DOTSTTS_SEED`
-- `DOTSTTS_LANGUAGE` — language advertised to clients (default `pl`). Home Assistant's TTS
+- `DOTSTTS_LANGUAGE` — language advertised to clients. When unset, a broad multilingual
+  list is advertised (dots.tts auto-detects the input language). Home Assistant's TTS
   entity needs at least one announced language to register, so the server always advertises
-  this (and at least one voice) even before a profile exists.
-- `DOTSTTS_DEFAULT_VOICE` — voice profile used by default / for warmup
+  at least one language (and at least one voice) even before a profile exists.
+- `DOTSTTS_DEFAULT_VOICE` — voice profile used when a request names none; falls back to
+  the first profile in the speaker dir when unset
 - `DOTSTTS_NORMALIZE_TEXT`
 - `DOTSTTS_OPTIMIZE`
 - `DOTSTTS_NO_WARMUP` — set to `1` to skip the startup warmup (see below)

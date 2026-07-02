@@ -42,6 +42,22 @@ class SpeakerStoreTests(unittest.TestCase):
             with self.assertRaises(SpeakerProfileNotFoundError):
                 SpeakerStore(temp_dir).get_profile("missing")
 
+    def test_no_requested_voice_falls_back_to_first_profile(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            profile_dir = Path(temp_dir) / "mira"
+            profile_dir.mkdir()
+            (profile_dir / "reference.wav").write_bytes(b"wav")
+            (profile_dir / "prompt.txt").write_text("Dzien dobry.", encoding="utf-8")
+
+            profile = SpeakerStore(temp_dir).get_profile(None, None)
+
+            self.assertEqual(profile.name, "mira")
+
+    def test_no_requested_voice_and_no_profiles_raises(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with self.assertRaises(SpeakerProfileNotFoundError):
+                SpeakerStore(temp_dir).get_profile(None, None)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -69,17 +70,23 @@ async def synthesize(request: SynthesisRequest) -> JSONResponse:
     if not request.text.strip():
         raise HTTPException(status_code=400, detail="Text is required")
 
+    options = SynthesisOptions(
+        num_steps=request.num_steps,
+        guidance_scale=request.guidance_scale,
+        seed=request.seed,
+        language=request.language,
+    )
+    # Run inference in the executor under the shared GPU lock: synthesis takes
+    # seconds and would otherwise freeze the event loop shared with the Wyoming
+    # server, and unlocked access could run CUDA concurrently with a Wyoming
+    # request.
+    loop = asyncio.get_running_loop()
     try:
-        result = service.synthesize(
-            request.text,
-            voice_name=request.voice,
-            options=SynthesisOptions(
-                num_steps=request.num_steps,
-                guidance_scale=request.guidance_scale,
-                seed=request.seed,
-                language=request.language,
-            ),
-        )
+        async with service.get_async_lock():
+            result = await loop.run_in_executor(
+                None,
+                lambda: service.synthesize(request.text, voice_name=request.voice, options=options),
+            )
     except ValueError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
 

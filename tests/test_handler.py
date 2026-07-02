@@ -131,6 +131,102 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual(handler.events[-1].type, "error")
         self.assertEqual(handler.events[-1].data["code"], "ValueError")
 
+    def test_streaming_error_closes_stream_and_recovers(self):
+        class FakeSynthesizer(_LockMixin):
+            def __init__(self):
+                self.fail = True
+
+            def synthesize_stream(self, text, *, voice_name, options):
+                if self.fail:
+                    raise ValueError("boom")
+                yield [0.1], 48000
+
+            def synthesize(self, text, *, voice_name, options):
+                return SynthesisResult(
+                    audio=[0.1, -0.1],
+                    sample_rate=48000,
+                    voice="mira",
+                    language=None,
+                    processing_time=0.1,
+                )
+
+        synthesizer = FakeSynthesizer()
+        handler = CollectingHandler(
+            cli_args=SimpleNamespace(no_streaming=False, samples_per_chunk=8),
+            synthesizer=synthesizer,
+        )
+
+        self.run_async(handler.handle_event(Event("synthesize-start", {})))
+        self.run_async(handler.handle_event(Event("synthesize-chunk", {"text": "Ala ma kota."})))
+        self.run_async(handler.handle_event(Event("synthesize-stop", {})))
+
+        event_types = [event.type for event in handler.events]
+        self.assertIn("error", event_types)
+        # The stream must still be closed so Home Assistant does not hang.
+        self.assertEqual(event_types.count("synthesize-stopped"), 1)
+        self.assertFalse(handler._streaming)
+
+        # The connection is persistent: the next plain synthesize must work.
+        synthesizer.fail = False
+        handler.events.clear()
+        self.run_async(handler.handle_event(Event("synthesize", {"text": "Ala."})))
+        self.assertEqual([event.type for event in handler.events][0], "audio-start")
+
+    def test_language_only_voice_falls_back_to_default(self):
+        calls = []
+
+        class FakeSynthesizer(_LockMixin):
+            def synthesize(self, text, *, voice_name, options):
+                calls.append(voice_name)
+                return SynthesisResult(
+                    audio=[0.1],
+                    sample_rate=48000,
+                    voice="mira",
+                    language=None,
+                    processing_time=0.1,
+                )
+
+        handler = CollectingHandler(
+            cli_args=SimpleNamespace(no_streaming=False, samples_per_chunk=8),
+            synthesizer=FakeSynthesizer(),
+        )
+
+        self.run_async(
+            handler.handle_event(Event("synthesize", {"text": "Hej.", "voice": {"language": "pl"}}))
+        )
+
+        # A language-only voice is not a profile name; the synthesizer decides
+        # the default profile itself.
+        self.assertEqual(calls, [None])
+
+    def test_describe_rebuilds_info_from_factory(self):
+        infos = [
+            Info(tts=[TtsProgram(
+                name="dots.tts",
+                attribution=Attribution(name="test", url="https://example.invalid"),
+                installed=True,
+                description="test",
+                version=None,
+                voices=[],
+            )]),
+        ]
+        calls = []
+
+        def factory():
+            calls.append(1)
+            return infos[0]
+
+        handler = CollectingHandler(
+            cli_args=SimpleNamespace(no_streaming=False, samples_per_chunk=8),
+            synthesizer=SimpleNamespace(),
+        )
+        handler._wyoming_info = factory
+
+        self.run_async(handler.handle_event(Event("describe", {})))
+        self.run_async(handler.handle_event(Event("describe", {})))
+
+        self.assertEqual(len(calls), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

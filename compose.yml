@@ -16,6 +16,33 @@ services:
       # Whole /data is a mount so runtime settings (/data/settings.json)
       # survive container recreation, not just restarts.
       - ./data:/data
+    # Probe both the Wyoming port and the HTTP API. `restart: unless-stopped`
+    # only covers crashes, not hangs, and Docker does not restart unhealthy
+    # containers by itself — so after 3 consecutive failures the check sends
+    # SIGINT to PID 1 (Python always handles it; SIGTERM from inside the
+    # container would be dropped for PID 1), the server exits cleanly and the
+    # restart policy brings it back. The kill only fires once the server has
+    # been healthy at least once (/tmp/hc_ok): start_period does NOT stop the
+    # test from running, so killing unconditionally would abort model loading
+    # in a loop. The marker is cleared on kill to re-arm the grace period.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >
+          python -c "import socket,urllib.request;
+          socket.create_connection(('127.0.0.1',10201),5).close();
+          urllib.request.urlopen('http://127.0.0.1:8180/health',timeout=10)"
+          && { touch /tmp/hc_ok; rm -f /tmp/hc_fails; }
+          || { if [ -f /tmp/hc_ok ]; then
+          n=$$(( $$(cat /tmp/hc_fails 2>/dev/null || echo 0) + 1 ));
+          echo $$n > /tmp/hc_fails;
+          if [ $$n -ge 3 ]; then rm -f /tmp/hc_ok /tmp/hc_fails; kill -INT 1; fi;
+          fi; exit 1; }
+      interval: 30s
+      timeout: 20s
+      retries: 3
+      # Model load + warmup can take a few minutes on a cold start.
+      start_period: 600s
     deploy:
       resources:
         reservations:

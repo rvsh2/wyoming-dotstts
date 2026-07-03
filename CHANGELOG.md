@@ -7,6 +7,10 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Compose healthcheck with self-restart**: probes the Wyoming port and the
+  HTTP API every 30 s; after 3 consecutive failures it SIGINTs PID 1 so the
+  restart policy revives a wedged (not just crashed) container. The kill only
+  arms after the first healthy probe, so model loading is never aborted.
 - **Assist pipeline language reaches synthesis end-to-end**: voices are
   advertised once per language with the language encoded in the voice id
   (`profile|lang`), because HA's Wyoming integration transmits only the picked

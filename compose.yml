@@ -5,6 +5,26 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    # Mirrors the Dockerfile CMD plus --no-streaming: at RTF > 1 on this GPU,
+    # streamed synthesis stalls behind playback and audio stutters between
+    # sentence chunks ("popcorn"). Buffering the full utterance trades a bit
+    # of latency for smooth speech. Drop the flag once synthesis is faster
+    # than realtime.
+    command:
+      - python
+      - -m
+      - dotstts_wyoming
+      - --uri
+      - tcp://0.0.0.0:10201
+      - --speaker-dir
+      - /data/speakers
+      - --model-dir
+      - /data/models
+      - --http-host
+      - 0.0.0.0
+      - --http-port
+      - "8180"
+      - --no-streaming
     ports:
       - "0.0.0.0:10201:10201"
       # Management/debug HTTP API. Exposed on the LAN for the Home Assistant

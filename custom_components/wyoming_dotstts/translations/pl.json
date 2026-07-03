@@ -2,7 +2,7 @@
   "config": {
     "step": {
       "user": {
-        "title": "Serwer dotsTTS",
+        "title": "Serwer dots.TTS",
         "description": "Połącz z HTTP API zarządzającym serwera wyoming-dotstts.",
         "data": {
           "host": "Host",

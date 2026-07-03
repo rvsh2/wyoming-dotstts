@@ -1,9 +1,9 @@
-<img src="brands/logo.png" alt="dotsTTS" height="96">
+<img src="brands/logo.png" alt="dots.TTS" height="96">
 
 # wyoming-dotstts
 
 Wyoming TTS server for Home Assistant backed by `rednote-hilab/dots.tts`. Ships the
-**dotsTTS** HACS integration for runtime speech settings.
+**dots.TTS** HACS integration for runtime speech settings.
 
 ## What It Does
 
@@ -101,7 +101,7 @@ curl -X POST http://<host>:8180/settings \
 Changes apply to every following synthesis (Wyoming and HTTP) and survive restarts.
 
 To control them from Home Assistant, install the bundled custom integration via HACS:
-HACS → custom repositories → add this repo as *Integration* → install *Wyoming dots.tts* →
+HACS → custom repositories → add this repo as *Integration* → install *dots.TTS* →
 restart HA → add the integration with the server host, port `8180`, and the API token.
 It creates entities for every runtime setting: `number` *Seed* (−1 = random), *Gain* (dB),
 *Diffusion steps* (quality ↔ speed); `select` *Default voice* and *Language* (`auto` =

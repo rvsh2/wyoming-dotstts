@@ -29,7 +29,7 @@ class DotsTtsEntity(CoordinatorEntity):
         model = (self._health.get("model") or "dots.tts").rsplit("/", 1)[-1]
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
-            name="dotsTTS",
+            name="dots.TTS",
             manufacturer="wyoming-dotstts",
             model=model,
         )

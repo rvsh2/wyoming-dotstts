@@ -10,8 +10,11 @@ dependencies = [
     "soundfile>=0.13.1,<1",
     "uvicorn[standard]>=0.29.0,<1",
     "wyoming>=1.8.0,<2",
-    "dots.tts @ git+https://github.com/rednote-hilab/dots.tts.git",
+    "dots.tts @ git+https://github.com/rednote-hilab/dots.tts.git@b995bdb7de14dad008b98cfa085ecc83600e5b7a",
 ]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
 
 [project.scripts]
 wyoming-dotstts = "dotstts_wyoming.__main__:main"

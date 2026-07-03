@@ -7,7 +7,9 @@ services:
       - .env
     ports:
       - "0.0.0.0:10201:10201"
-      - "0.0.0.0:8180:8180"
+      # Debug HTTP API has no auth and can trigger GPU synthesis — keep it off
+      # the network. Containers on bridge-network still reach it directly.
+      - "127.0.0.1:8180:8180"
     networks:
       - bridge-network
     volumes:

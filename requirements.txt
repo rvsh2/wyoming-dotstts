@@ -3,4 +3,4 @@ numpy>=2.2.6,<3
 soundfile>=0.13.1,<1
 uvicorn[standard]>=0.29.0,<1
 wyoming>=1.8.0,<2
-git+https://github.com/rednote-hilab/dots.tts.git
+git+https://github.com/rednote-hilab/dots.tts.git@b995bdb7de14dad008b98cfa085ecc83600e5b7a

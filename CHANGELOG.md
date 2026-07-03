@@ -3,7 +3,41 @@
 All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased] - 2026-07-02
+## [Unreleased] - 2026-07-03
+
+Code-review pass: reproducibility, performance, and hygiene fixes.
+
+### Fixed
+
+- **`.env` is excluded from the Docker image** (`.dockerignore`) — `COPY . .`
+  previously baked it into an image layer.
+- **Reproducible builds**: the `dots.tts` git dependency is pinned to a commit
+  and the upstream `recommended.txt` constraints are vendored into
+  `constraints.txt`, so image builds no longer depend on GitHub being reachable
+  or on upstream edits.
+- **A slow client no longer stalls other connections' synthesis**: streamed
+  audio is written to the client outside the shared GPU lock
+  (producer/consumer split in the event handler).
+
+### Changed
+
+- **Audio stays a numpy array end-to-end** instead of a Python `list[float]`
+  (~480k float objects per 10 s of 48 kHz audio), cutting per-request memory
+  and conversion overhead.
+- Warmup text follows the configured `DOTSTTS_LANGUAGE` instead of always
+  being Polish.
+- Compose publishes the auth-less HTTP debug port `8180` on `127.0.0.1` only;
+  the Wyoming port is unchanged.
+- Audio chunking loop simplified (no `math.ceil` bookkeeping); duplicated
+  stream-close/reset logic factored into `_close_stream()`; unused FastAPI
+  `lifespan` removed.
+
+### Added
+
+- `dev` extra (`pip install -e .[dev]`) with pytest so the test suite is
+  runnable out of the box.
+
+## [5614832] - 2026-07-02
 
 QA pass: 10 verified findings fixed.
 

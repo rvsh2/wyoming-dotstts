@@ -6,8 +6,10 @@ import asyncio
 import logging
 import os
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from typing import Iterable, Optional
+
+import numpy as np
 
 from .speaker_store import SpeakerStore
 
@@ -28,17 +30,20 @@ class SynthesisOptions:
 
 @dataclass
 class SynthesisResult:
-    audio: list[float]
+    audio: np.ndarray
     sample_rate: int
     voice: str
     language: str | None
     processing_time: float
 
     def asdict(self) -> dict:
-        payload = asdict(self)
-        payload["audio_samples"] = int(len(self.audio))
-        del payload["audio"]
-        return payload
+        return {
+            "sample_rate": self.sample_rate,
+            "voice": self.voice,
+            "language": self.language,
+            "processing_time": self.processing_time,
+            "audio_samples": int(len(self.audio)),
+        }
 
 
 class DotsTtsSynthesizer:
@@ -142,32 +147,18 @@ class DotsTtsSynthesizer:
         }
 
     @staticmethod
-    def _tensor_to_float_list(audio) -> list[float]:
+    def _tensor_to_float_array(audio) -> np.ndarray:
+        """Flatten runtime output (torch tensor, ndarray, or nested list) to a
+        1-D float32 numpy array without going through Python float objects."""
         if hasattr(audio, "detach"):
             audio = audio.detach()
         if hasattr(audio, "float"):
             audio = audio.float()
         if hasattr(audio, "cpu"):
             audio = audio.cpu()
-        if hasattr(audio, "squeeze"):
-            audio = audio.squeeze()
         if hasattr(audio, "numpy"):
             audio = audio.numpy()
-        if hasattr(audio, "tolist"):
-            values = audio.tolist()
-        else:
-            values = audio
-
-        if isinstance(values, (float, int)):
-            return [float(values)]
-
-        flattened: list[float] = []
-        for sample in values:
-            if isinstance(sample, list):
-                flattened.extend(float(item) for item in sample)
-            else:
-                flattened.append(float(sample))
-        return flattened
+        return np.asarray(audio, dtype=np.float32).reshape(-1)
 
     def _runtime_kwargs(self, profile, options: SynthesisOptions | None) -> dict:
         options = options or SynthesisOptions()
@@ -214,7 +205,9 @@ class DotsTtsSynthesizer:
     ) -> SynthesisResult:
         profile = self.speaker_store.get_profile(voice_name, self.default_voice)
         if not text.strip():
-            return SynthesisResult([], DEFAULT_SAMPLE_RATE, profile.name, None, 0.0)
+            return SynthesisResult(
+                np.zeros(0, dtype=np.float32), DEFAULT_SAMPLE_RATE, profile.name, None, 0.0
+            )
 
         self.load()
         assert self._runtime is not None
@@ -225,7 +218,7 @@ class DotsTtsSynthesizer:
         result = self._runtime.generate(text=text, **runtime_kwargs)
 
         sample_rate = int(result.get("sample_rate", getattr(self._runtime, "sample_rate", DEFAULT_SAMPLE_RATE)))
-        audio = self._tensor_to_float_list(result["audio"])
+        audio = self._tensor_to_float_array(result["audio"])
 
         return SynthesisResult(
             audio=audio,
@@ -241,7 +234,7 @@ class DotsTtsSynthesizer:
         *,
         voice_name: str | None = None,
         options: SynthesisOptions | None = None,
-    ) -> Iterable[tuple[list[float], int]]:
+    ) -> Iterable[tuple[np.ndarray, int]]:
         profile = self.speaker_store.get_profile(voice_name, self.default_voice)
         if not text.strip():
             return
@@ -253,4 +246,4 @@ class DotsTtsSynthesizer:
         self._apply_seed(self._seed_for_options(options))
         sample_rate = int(getattr(self._runtime, "sample_rate", DEFAULT_SAMPLE_RATE))
         for chunk in self._runtime.generate_stream(text=text, **runtime_kwargs):
-            yield self._tensor_to_float_list(chunk), sample_rate
+            yield self._tensor_to_float_array(chunk), sample_rate

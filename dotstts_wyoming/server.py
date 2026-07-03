@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-from contextlib import asynccontextmanager
 from pathlib import Path
 
 import uvicorn
@@ -42,12 +41,7 @@ def render_index() -> str:
     return template
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    yield
-
-
-app = FastAPI(title="wyoming-dotstts debug server", lifespan=lifespan)
+app = FastAPI(title="wyoming-dotstts debug server")
 
 
 @app.get("/", response_class=HTMLResponse)

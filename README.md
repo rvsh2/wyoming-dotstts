@@ -5,7 +5,7 @@ Wyoming TTS server for Home Assistant backed by `rednote-hilab/dots.tts`.
 ## What It Does
 
 - exposes Wyoming TTS on port `10201`
-- exposes optional HTTP debug on port `8180` (its failure never takes the Wyoming service down)
+- exposes optional HTTP debug on port `8180` (its failure never takes the Wyoming service down); in compose it is published on `127.0.0.1` only — it has no auth and can trigger GPU synthesis
 - uses `rednote-hilab/dots.tts-mf` by default
 - publishes local voice-cloning profiles from `data/speakers`
 - uses native `generate_stream` for streaming Wyoming requests
@@ -44,7 +44,7 @@ Persisted data:
 ```bash
 python -m venv .venv
 . .venv/bin/activate
-pip install -r requirements.txt -c https://raw.githubusercontent.com/rednote-hilab/dots.tts/main/constraints/recommended.txt
+pip install -r requirements.txt -c constraints.txt
 pip install .
 python -m dotstts_wyoming \
   --uri tcp://0.0.0.0:10201 \
@@ -85,7 +85,8 @@ default/first voice profile) so the *first* real request isn't slow — a cold s
 ## Tests
 
 ```bash
-python -m unittest discover -s tests
+pip install -e .[dev]
+python -m pytest tests/
 ```
 
 ## License

@@ -181,10 +181,13 @@ async def serve(args: argparse.Namespace) -> None:
     if not args.no_warmup:
         warm_voices = synthesizer.available_voices()
         if warm_voices:
+            # Match the configured language so warmup exercises the same path
+            # as real requests (the model conditions on detected language).
+            warm_text = "Rozgrzewka." if args.language in (None, "pl") else "Warm-up."
             try:
                 _t = time.perf_counter()
                 synthesizer.synthesize(
-                    "Rozgrzewka.",
+                    warm_text,
                     voice_name=warm_voices[0],
                     options=SynthesisOptions(
                         num_steps=args.num_steps,

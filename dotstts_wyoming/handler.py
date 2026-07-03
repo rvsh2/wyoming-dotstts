@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import math
 from typing import Any, Optional
+
+import numpy as np
 
 from .audio import float32_to_pcm16
 from .synthesizer import DotsTtsSynthesizer, SynthesisOptions
@@ -98,13 +99,7 @@ class DotsTtsEventHandler(AsyncEventHandler):
                 remainder = self._chunker.finish()
                 if remainder:
                     await self._emit_sentence_stream(remainder, voice_name=self._voice_name, options=self._options)
-                if self._stream_started:
-                    await self.write_event(AudioStop().event())
-                    self._stream_started = False
-                await self.write_event(SynthesizeStopped().event())
-                self._streaming = False
-                self._voice_name = None
-                self._options = SynthesisOptions()
+                await self._close_stream()
                 return True
 
             return True
@@ -115,15 +110,19 @@ class DotsTtsEventHandler(AsyncEventHandler):
             # _streaming=True would silently swallow every later synthesize
             # while Home Assistant waits forever for synthesize-stopped.
             if self._streaming:
-                if self._stream_started:
-                    await self.write_event(AudioStop().event())
-                    self._stream_started = False
-                await self.write_event(SynthesizeStopped().event())
-                self._streaming = False
-                self._voice_name = None
-                self._options = SynthesisOptions()
-                self._chunker = SentenceChunker()
+                await self._close_stream()
             return True
+
+    async def _close_stream(self) -> None:
+        """Emit the closing events for a streaming session and reset its state."""
+        if self._stream_started:
+            await self.write_event(AudioStop().event())
+            self._stream_started = False
+        await self.write_event(SynthesizeStopped().event())
+        self._streaming = False
+        self._voice_name = None
+        self._options = SynthesisOptions()
+        self._chunker = SentenceChunker()
 
     @staticmethod
     def _voice_name_from_event(event: Event) -> Optional[str]:
@@ -158,14 +157,30 @@ class DotsTtsEventHandler(AsyncEventHandler):
         options: SynthesisOptions,
     ) -> None:
         loop = asyncio.get_running_loop()
-        async with self.synthesizer.get_async_lock():
-            iterator = iter(
-                self.synthesizer.synthesize_stream(sentence, voice_name=voice_name, options=options)
-            )
-            # Drive the synchronous generator off the event loop so GPU inference
-            # does not block other connections.
+        queue: asyncio.Queue = asyncio.Queue()
+
+        # Producer drains the synchronous generator off the event loop (GPU
+        # inference must not block other connections) while holding the GPU
+        # lock. Writing to the client happens outside the lock so a slow
+        # client cannot stall other connections' synthesis.
+        async def produce() -> None:
+            try:
+                async with self.synthesizer.get_async_lock():
+                    iterator = iter(
+                        self.synthesizer.synthesize_stream(sentence, voice_name=voice_name, options=options)
+                    )
+                    while True:
+                        item = await loop.run_in_executor(None, _next_chunk, iterator)
+                        if item is _STREAM_DONE:
+                            break
+                        await queue.put(item)
+            finally:
+                await queue.put(_STREAM_DONE)
+
+        producer = asyncio.create_task(produce())
+        try:
             while True:
-                item = await loop.run_in_executor(None, _next_chunk, iterator)
+                item = await queue.get()
                 if item is _STREAM_DONE:
                     break
                 audio, sample_rate = item
@@ -173,27 +188,35 @@ class DotsTtsEventHandler(AsyncEventHandler):
                     await self.write_event(AudioStart(rate=sample_rate, width=2, channels=1).event())
                     self._stream_started = True
                 await self._emit_audio_chunks(audio, sample_rate=sample_rate)
+        finally:
+            if not producer.done():
+                producer.cancel()
+            # Re-raise a synthesis error here (handled by handle_event) unless
+            # the producer was cancelled because writing to the client failed.
+            try:
+                await producer
+            except asyncio.CancelledError:
+                pass
 
-    async def _emit_audio(self, audio: list[float], *, sample_rate: int) -> None:
+    async def _emit_audio(self, audio: np.ndarray, *, sample_rate: int) -> None:
         await self.write_event(AudioStart(rate=sample_rate, width=2, channels=1).event())
         await self._emit_audio_chunks(audio, sample_rate=sample_rate)
         await self.write_event(AudioStop().event())
 
-    async def _emit_audio_chunks(self, audio: list[float], *, sample_rate: int) -> None:
+    async def _emit_audio_chunks(self, audio: np.ndarray, *, sample_rate: int) -> None:
         audio_bytes = float32_to_pcm16(audio)
         width = 2
         channels = 1
-        bytes_per_sample = width * channels
-        bytes_per_chunk = bytes_per_sample * self.cli_args.samples_per_chunk
-        num_chunks = max(1, int(math.ceil(len(audio_bytes) / max(1, bytes_per_chunk))))
+        bytes_per_chunk = max(1, width * channels * self.cli_args.samples_per_chunk)
 
-        for index in range(num_chunks):
-            offset = index * bytes_per_chunk
-            chunk = audio_bytes[offset : offset + bytes_per_chunk]
-            if not chunk:
-                continue
+        for offset in range(0, len(audio_bytes), bytes_per_chunk):
             await self.write_event(
-                AudioChunk(audio=chunk, rate=sample_rate, width=width, channels=channels).event()
+                AudioChunk(
+                    audio=audio_bytes[offset : offset + bytes_per_chunk],
+                    rate=sample_rate,
+                    width=width,
+                    channels=channels,
+                ).event()
             )
 
     @staticmethod

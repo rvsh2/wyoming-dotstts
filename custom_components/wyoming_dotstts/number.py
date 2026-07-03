@@ -44,12 +44,15 @@ class _DotsTtsSettingsNumber(CoordinatorEntity, NumberEntity):
         super().__init__(runtime["coordinator"])
         self._runtime = runtime
         self._attr_unique_id = f"{entry.entry_id}_{self.setting_key}"
-        model = ((self.coordinator.data or {}).get("health") or {}).get("model")
+        model = ((self.coordinator.data or {}).get("health") or {}).get("model") or "dots.tts"
+        # HA renders the device card as "<model> by <manufacturer>", so strip
+        # the HF org prefix from the model name to avoid "rednote-hilab/...
+        # by rednote-hilab".
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
             name="Wyoming dots.tts",
             manufacturer="rednote-hilab",
-            model=model or "dots.tts",
+            model=model.rsplit("/", 1)[-1],
         )
 
     @property

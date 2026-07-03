@@ -2,7 +2,7 @@
   "config": {
     "step": {
       "user": {
-        "title": "Wyoming dots.tts server",
+        "title": "dotsTTS server",
         "description": "Connect to the HTTP management API of the wyoming-dotstts server.",
         "data": {
           "host": "Host",

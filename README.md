@@ -1,6 +1,9 @@
+<img src="brands/logo.png" alt="dotsTTS" height="96">
+
 # wyoming-dotstts
 
-Wyoming TTS server for Home Assistant backed by `rednote-hilab/dots.tts`.
+Wyoming TTS server for Home Assistant backed by `rednote-hilab/dots.tts`. Ships the
+**dotsTTS** HACS integration for runtime speech settings.
 
 ## What It Does
 

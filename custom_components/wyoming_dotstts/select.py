@@ -47,7 +47,11 @@ class DotsTtsVoiceSelect(DotsTtsEntity, SelectEntity):
 
     @property
     def current_option(self) -> str:
-        return self._settings.get("default_voice") or AUTO
+        # Guard against a persisted voice whose profile has since been
+        # deleted/invalidated — an option outside `options` makes HA raise on
+        # every coordinator refresh.
+        voice = self._settings.get("default_voice") or AUTO
+        return voice if voice in self.options else AUTO
 
     async def async_select_option(self, option: str) -> None:
         await self._post_settings({"default_voice": None if option == AUTO else option})

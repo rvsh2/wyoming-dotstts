@@ -9,6 +9,13 @@
           "port": "Port",
           "api_token": "Token API (DOTSTTS_API_TOKEN)"
         }
+      },
+      "reauth_confirm": {
+        "title": "Zaktualizuj token API",
+        "description": "Serwer odrzucił zapisany token API. Podaj aktualny DOTSTTS_API_TOKEN.",
+        "data": {
+          "api_token": "Token API (DOTSTTS_API_TOKEN)"
+        }
       }
     },
     "error": {
@@ -16,7 +23,8 @@
       "invalid_auth": "Nieprawidłowy token API"
     },
     "abort": {
-      "already_configured": "Ten serwer jest już skonfigurowany"
+      "already_configured": "Ten serwer jest już skonfigurowany",
+      "reauth_successful": "Token API zaktualizowany"
     }
   }
 }

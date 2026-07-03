@@ -9,6 +9,13 @@
           "port": "Port",
           "api_token": "API token (DOTSTTS_API_TOKEN)"
         }
+      },
+      "reauth_confirm": {
+        "title": "Update API token",
+        "description": "The server rejected the stored API token. Enter the current DOTSTTS_API_TOKEN.",
+        "data": {
+          "api_token": "API token (DOTSTTS_API_TOKEN)"
+        }
       }
     },
     "error": {
@@ -16,7 +23,8 @@
       "invalid_auth": "Invalid API token"
     },
     "abort": {
-      "already_configured": "This server is already configured"
+      "already_configured": "This server is already configured",
+      "reauth_successful": "API token updated"
     }
   }
 }

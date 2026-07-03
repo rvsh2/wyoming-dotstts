@@ -15,7 +15,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from .audio import pcm16_wav_bytes
-from .runtime_settings import save_settings
+from .runtime_settings import load_settings, save_settings
 from .synthesizer import DEFAULT_MODEL, DotsTtsSynthesizer, SynthesisOptions
 
 
@@ -27,6 +27,10 @@ service = DotsTtsSynthesizer(
     model_dir="/data/models",
 )
 settings_path = Path(os.getenv("DOTSTTS_SETTINGS_FILE", "/data/settings.json"))
+# CLI/env-configured values captured at startup, before persisted overrides are
+# applied — "reset to default" restores these, not hardcoded built-ins.
+# __main__.serve() overwrites this together with `service`.
+startup_defaults = service.runtime_settings()
 
 
 def _require_token(x_api_token: Optional[str]) -> None:
@@ -103,16 +107,25 @@ async def update_settings(
 ) -> JSONResponse:
     _require_token(x_api_token)
     updates = {key: getattr(request, key) for key in _SETTINGS_KEYS if key in request.model_fields_set}
-    # Nullable-but-not-optional fields: null means "back to default".
-    for key, default in (("gain_db", 0.0), ("num_steps", 4), ("trim_silence", True), ("normalize_text", False)):
-        if key in updates and updates[key] is None:
-            updates[key] = default
     voice = updates.get("default_voice")
     if voice and voice not in service.available_voices():
         raise HTTPException(status_code=400, detail=f"Unknown voice profile '{voice}'")
     if updates:
-        service.apply_runtime_settings(updates)
-        save_settings(settings_path, service.runtime_settings())
+        # Persist only user-changed keys (deltas) so untouched settings keep
+        # following CLI/env config across restarts. For seed/voice/language
+        # null is a meaningful value (random / auto); for the rest null means
+        # "back to the operator-configured default", which un-persists the key.
+        persisted = load_settings(settings_path)
+        applied = {}
+        for key, value in updates.items():
+            if value is None and key not in ("seed", "default_voice", "language"):
+                applied[key] = startup_defaults[key]
+                persisted.pop(key, None)
+            else:
+                applied[key] = value
+                persisted[key] = value
+        service.apply_runtime_settings(applied)
+        save_settings(settings_path, persisted)
     return JSONResponse(service.runtime_settings())
 
 

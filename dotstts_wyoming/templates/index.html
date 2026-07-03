@@ -47,16 +47,25 @@
       <p>Default voice: <code>__VOICE__</code></p>
       <label for="voice">Voice</label>
       <input id="voice" name="voice" placeholder="voice profile name">
+      <label for="token">API token (required when DOTSTTS_API_TOKEN is set)</label>
+      <input id="token" name="token" type="password" placeholder="X-API-Token" autocomplete="off">
       <label for="text">Text</label>
       <textarea id="text" rows="5">Hello from dots.tts.</textarea>
       <button id="send">Synthesize</button>
       <pre id="result"></pre>
     </main>
     <script>
+      const tokenInput = document.getElementById("token");
+      tokenInput.value = localStorage.getItem("dotstts_api_token") || "";
       document.getElementById("send").addEventListener("click", async () => {
+        localStorage.setItem("dotstts_api_token", tokenInput.value);
+        const headers = {"Content-Type": "application/json"};
+        if (tokenInput.value) {
+          headers["X-API-Token"] = tokenInput.value;
+        }
         const response = await fetch("/synthesize", {
           method: "POST",
-          headers: {"Content-Type": "application/json"},
+          headers,
           body: JSON.stringify({
             voice: document.getElementById("voice").value || null,
             text: document.getElementById("text").value

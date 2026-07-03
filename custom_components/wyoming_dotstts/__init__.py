@@ -15,6 +15,7 @@ import aiohttp
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import aiohttp_client
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -52,8 +53,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             async with session.get(
                 f"{base}/settings", headers=headers, timeout=REQUEST_TIMEOUT
             ) as response:
+                if response.status == 401:
+                    # Wrong/rotated token: trigger HA's reauth flow instead of
+                    # reporting a misleading connectivity failure.
+                    raise ConfigEntryAuthFailed("Invalid API token")
                 response.raise_for_status()
                 data["settings"] = await response.json()
+        except ConfigEntryAuthFailed:
+            raise
         except Exception as error:
             raise UpdateFailed(f"Cannot reach {base}: {error}") from error
         return data

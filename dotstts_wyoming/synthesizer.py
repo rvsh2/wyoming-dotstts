@@ -181,11 +181,13 @@ class DotsTtsSynthesizer:
         """
         if not self.trim_silence or audio.size == 0:
             return audio
+        padding = int(_SILENCE_PADDING_SECONDS * sample_rate)
         threshold = max(float(np.abs(audio).max()) * _SILENCE_RELATIVE_THRESHOLD, _SILENCE_ABSOLUTE_FLOOR)
         loud = np.flatnonzero(np.abs(audio) > threshold)
         if loud.size == 0:
-            return audio[:0]
-        padding = int(_SILENCE_PADDING_SECONDS * sample_rate)
+            # All-quiet generation: keep a short stub so clients still get a
+            # valid (briefly silent) audio stream instead of zero samples.
+            return audio[:padding]
         start = max(0, int(loud[0]) - padding)
         end = min(len(audio), int(loud[-1]) + 1 + padding)
         return audio[start:end]
@@ -227,7 +229,11 @@ class DotsTtsSynthesizer:
             pending = []
             yield chunk
 
-        if started and pending:
+        if pending and not started:
+            # All-quiet generation: emit a short silent stub so the Wyoming
+            # stream still gets a valid audio-start/audio-stop pair.
+            yield np.concatenate(pending)[:padding]
+        elif started and pending:
             tail = np.concatenate(pending)
             yield tail[:padding]
 

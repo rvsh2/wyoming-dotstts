@@ -149,10 +149,15 @@ class SynthesizerTests(unittest.TestCase):
         synth.trim_silence = False
         self.assertEqual(len(synth._trim_silence(audio, rate)), 3000)
 
-    def test_trim_silence_all_quiet_returns_empty(self):
+    def test_trim_silence_all_quiet_keeps_short_stub(self):
+        # A valid (briefly silent) stream must still be produced, never zero
+        # samples / zero chunks.
         synth = DotsTtsSynthesizer()
         audio = np.full(1000, 5e-5, dtype=np.float32)
-        self.assertEqual(len(synth._trim_silence(audio, 1000)), 0)
+        self.assertEqual(len(synth._trim_silence(audio, 1000)), 150)
+
+        chunks = list(synth._trim_silence_stream([audio], 1000))
+        self.assertEqual(sum(len(c) for c in chunks), 150)
 
     def test_trim_silence_stream_drops_lead_and_tail(self):
         synth = DotsTtsSynthesizer()

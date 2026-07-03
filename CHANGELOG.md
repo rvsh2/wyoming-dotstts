@@ -5,6 +5,37 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased] - 2026-07-03
 
+QA pass: 10 verified findings fixed.
+
+### Fixed
+
+- **GPU lock race on client disconnect**: the streaming producer is now asked
+  to stop between inference steps instead of being cancelled, so the GPU lock
+  is only released once the executor thread is idle — no more concurrent CUDA
+  calls after an aborted stream.
+- **Settings persistence redesigned to deltas**: settings.json stores only the
+  keys explicitly changed via the API, so untouched settings keep following
+  CLI/env config across restarts (previously one HA slider change froze the
+  entire env snapshot forever). `null` now restores the operator-configured
+  default (env/CLI), not a hardcoded built-in, and un-persists the key.
+- **Persisted values are validated on load** (types/ranges; a deleted voice
+  profile is dropped with a warning) — a hand-edited or stale settings.json
+  can no longer crash startup or break all synthesis.
+- **settings.json is written atomically** (temp file + rename), so a crash
+  mid-write cannot truncate it.
+- **Debug web UI works with token auth**: the page has an API-token field
+  (stored in localStorage) and sends X-API-Token with /synthesize.
+- **All-quiet generations keep a valid stream**: trimming now leaves a 150 ms
+  silent stub instead of zero samples / a stream with no audio events.
+- **Wyoming Describe advertises the effective language** (runtime changes
+  included), not the stale env value, so HA pipeline pairing follows the
+  actual synthesis language; warmup also follows the effective settings.
+- HA integration v0.3.1: **401 triggers a reauth flow** (enter the new token
+  in the UI instead of re-adding the integration) and the *Default voice*
+  select falls back to `auto` when the persisted voice no longer exists.
+
+## [a081d22] - 2026-07-03
+
 Full runtime settings set in the HA integration.
 
 ### Added

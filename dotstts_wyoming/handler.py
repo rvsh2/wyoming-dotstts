@@ -158,6 +158,7 @@ class DotsTtsEventHandler(AsyncEventHandler):
     ) -> None:
         loop = asyncio.get_running_loop()
         queue: asyncio.Queue = asyncio.Queue()
+        stop_requested = False
 
         # Producer drains the synchronous generator off the event loop (GPU
         # inference must not block other connections) while holding the GPU
@@ -169,7 +170,11 @@ class DotsTtsEventHandler(AsyncEventHandler):
                     iterator = iter(
                         self.synthesizer.synthesize_stream(sentence, voice_name=voice_name, options=options)
                     )
-                    while True:
+                    # Checked between steps rather than via task cancellation:
+                    # a cancel at the run_in_executor await would release the
+                    # GPU lock while the executor thread is still running
+                    # inference, breaking single-flight GPU access.
+                    while not stop_requested:
                         item = await loop.run_in_executor(None, _next_chunk, iterator)
                         if item is _STREAM_DONE:
                             break
@@ -189,14 +194,11 @@ class DotsTtsEventHandler(AsyncEventHandler):
                     self._stream_started = True
                 await self._emit_audio_chunks(audio, sample_rate=sample_rate)
         finally:
-            if not producer.done():
-                producer.cancel()
-            # Re-raise a synthesis error here (handled by handle_event) unless
-            # the producer was cancelled because writing to the client failed.
-            try:
-                await producer
-            except asyncio.CancelledError:
-                pass
+            # Ask the producer to stop after its in-flight inference step and
+            # wait for it, so the lock is only released once the GPU is idle.
+            # Re-raises a synthesis error (handled by handle_event).
+            stop_requested = True
+            await producer
 
     async def _emit_audio(self, audio: np.ndarray, *, sample_rate: int) -> None:
         await self.write_event(AudioStart(rate=sample_rate, width=2, channels=1).event())

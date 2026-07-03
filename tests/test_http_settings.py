@@ -20,14 +20,17 @@ class SettingsEndpointTests(unittest.TestCase):
 
         self._old_service = http_server.service
         self._old_path = http_server.settings_path
+        self._old_defaults = http_server.startup_defaults
         http_server.service = DotsTtsSynthesizer(speaker_dir=self.temp.name)
         http_server.settings_path = self.settings_file
+        http_server.startup_defaults = http_server.service.runtime_settings()
         self.addCleanup(self._restore)
         self.client = TestClient(http_server.app)
 
     def _restore(self):
         http_server.service = self._old_service
         http_server.settings_path = self._old_path
+        http_server.startup_defaults = self._old_defaults
 
     def test_settings_open_without_configured_token(self):
         with patch.dict(os.environ, {"DOTSTTS_API_TOKEN": ""}):
@@ -66,10 +69,22 @@ class SettingsEndpointTests(unittest.TestCase):
         self.assertEqual(response.json()["gain_db"], 6.5)
         self.assertEqual(http_server.service.seed, 42)
         self.assertEqual(http_server.service.gain_db, 6.5)
+        # Only user-changed keys are persisted; untouched settings keep
+        # following CLI/env config across restarts.
         persisted = json.loads(self.settings_file.read_text())
-        self.assertEqual(persisted["seed"], 42)
-        self.assertEqual(persisted["gain_db"], 6.5)
-        self.assertEqual(persisted["num_steps"], 4)
+        self.assertEqual(persisted, {"seed": 42, "gain_db": 6.5})
+
+    def test_post_null_resets_to_operator_default_and_unpersists(self):
+        http_server.startup_defaults = {**http_server.startup_defaults, "num_steps": 8}
+        with patch.dict(os.environ, {"DOTSTTS_API_TOKEN": ""}):
+            self.client.post("/settings", json={"num_steps": 2})
+            self.assertEqual(
+                json.loads(self.settings_file.read_text())["num_steps"], 2
+            )
+            body = self.client.post("/settings", json={"num_steps": None}).json()
+        # Restores the operator-configured default, not the hardcoded one.
+        self.assertEqual(body["num_steps"], 8)
+        self.assertNotIn("num_steps", json.loads(self.settings_file.read_text()))
 
     def test_post_null_seed_restores_random(self):
         http_server.service.seed = 42
@@ -146,6 +161,25 @@ class RuntimeSettingsFileTests(unittest.TestCase):
             path = Path(temp) / "settings.json"
             path.write_text("{not json", encoding="utf-8")
             self.assertEqual(load_settings(path), {})
+
+    def test_invalid_values_dropped_on_load(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "settings.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "num_steps": "fast",
+                        "gain_db": 999,
+                        "trim_silence": "yes",
+                        "seed": -5,
+                        "language": "pl",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            # Only the valid key survives; bad values degrade to warnings
+            # instead of crashing startup.
+            self.assertEqual(load_settings(path), {"language": "pl"})
 
 
 if __name__ == "__main__":

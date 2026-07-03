@@ -67,8 +67,9 @@ def _voice_entry(name: str, languages: list[str]) -> TtsVoice:
 
 def build_info(args: argparse.Namespace, synthesizer: DotsTtsSynthesizer) -> Info:
     # Home Assistant's TTS entity requires at least one announced language to set
-    # _attr_default_language; without it the entity fails to register.
-    languages = [args.language] if args.language else DEFAULT_LANGUAGES
+    # _attr_default_language; without it the entity fails to register. Read the
+    # synthesizer (not args) so runtime language changes are advertised too.
+    languages = [synthesizer.language] if synthesizer.language else DEFAULT_LANGUAGES
     # Always advertise at least one voice, even when no reference prompts exist on
     # disk, so HA can create the entity.
     names = synthesizer.available_voices() or [args.voice or "default"]
@@ -155,6 +156,7 @@ async def _serve_http_debug(
     host: str,
     port: int,
     settings_file: str,
+    startup_defaults: dict,
 ) -> None:
     import uvicorn
 
@@ -162,6 +164,7 @@ async def _serve_http_debug(
 
     http_server.service = synthesizer
     http_server.settings_path = Path(settings_file)
+    http_server.startup_defaults = startup_defaults
     config = uvicorn.Config(http_server.app, host=host, port=port, log_level="info")
     server = uvicorn.Server(config)
     # A debug-only endpoint must never take the Wyoming TTS service down with
@@ -193,8 +196,20 @@ async def serve(args: argparse.Namespace) -> None:
         gain_db=args.gain_db,
         trim_silence=not args.no_trim_silence,
     )
+    # CLI/env-configured values, captured before persisted overrides so the
+    # settings API can restore them on "reset to default".
+    startup_defaults = synthesizer.runtime_settings()
     # Settings changed at runtime via the HTTP API win over CLI/env defaults.
+    # load_settings validates types/ranges; the voice must additionally still
+    # exist on disk, otherwise a deleted profile would break all synthesis.
     persisted = load_settings(args.settings_file)
+    persisted_voice = persisted.get("default_voice")
+    if persisted_voice and persisted_voice not in synthesizer.available_voices():
+        LOGGER.warning(
+            "Persisted default voice '%s' no longer exists; falling back to configured default",
+            persisted_voice,
+        )
+        del persisted["default_voice"]
     if persisted:
         synthesizer.apply_runtime_settings(persisted)
         LOGGER.info("Applied persisted runtime settings from %s: %s", args.settings_file, persisted)
@@ -210,20 +225,15 @@ async def serve(args: argparse.Namespace) -> None:
     if not args.no_warmup:
         warm_voices = synthesizer.available_voices()
         if warm_voices:
-            # Match the configured language so warmup exercises the same path
-            # as real requests (the model conditions on detected language).
-            warm_text = "Rozgrzewka." if args.language in (None, "pl") else "Warm-up."
+            # Match the effective language (env or persisted override) so
+            # warmup exercises the same path as real requests.
+            warm_text = "Rozgrzewka." if synthesizer.language in (None, "pl") else "Warm-up."
             try:
                 _t = time.perf_counter()
                 synthesizer.synthesize(
                     warm_text,
                     voice_name=warm_voices[0],
-                    options=SynthesisOptions(
-                        num_steps=args.num_steps,
-                        guidance_scale=args.guidance_scale,
-                        seed=args.seed,
-                        language=args.language,
-                    ),
+                    options=SynthesisOptions(guidance_scale=args.guidance_scale),
                 )
                 LOGGER.info("Warmup synthesis done in %.1fs (voice=%s)", time.perf_counter() - _t, warm_voices[0])
             except Exception as exc:  # noqa: BLE001 - warmup must never block serving
@@ -245,7 +255,11 @@ async def serve(args: argparse.Namespace) -> None:
         tasks.append(
             asyncio.create_task(
                 _serve_http_debug(
-                    synthesizer, host=args.http_host, port=args.http_port, settings_file=args.settings_file
+                    synthesizer,
+                    host=args.http_host,
+                    port=args.http_port,
+                    settings_file=args.settings_file,
+                    startup_defaults=startup_defaults,
                 )
             )
         )

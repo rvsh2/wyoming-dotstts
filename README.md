@@ -39,6 +39,9 @@ runtime settings (`settings.json`).
    - `select`: *Default voice*, *Language* (`auto` = first profile / auto-detect)
    - `switch`: *Trim silence*, *Normalize text*
    - `binary_sensor` *Ready*, `sensor` *Voices*
+   - a **dots.TTS sidebar panel** for voice management: upload a reference recording
+     (any format; converted and loudness-normalized automatically), play, delete and
+     test-synthesize profiles — no filesystem access needed
 
 Model, device and precision require a container restart and stay in `.env`.
 

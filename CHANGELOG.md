@@ -7,6 +7,13 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Voice management panel in the HA sidebar** (integration v0.4.0): list,
+  play, upload (any audio format — converted to mono 24 kHz WAV with optional
+  loudness normalization), delete and test-synthesize voice profiles. The
+  panel talks to the server through an authenticated proxy view, so the API
+  token never reaches the browser. New server endpoints: `POST /voices`,
+  `DELETE /voices/{name}`, `GET /voices/{name}/audio`, richer `GET /voices`,
+  and `POST /synthesize?format=wav`.
 - **Compose healthcheck with self-restart**: probes the Wyoming port and the
   HTTP API every 30 s; after 3 consecutive failures it SIGINTs PID 1 so the
   restart policy revives a wedged (not just crashed) container. The kill only

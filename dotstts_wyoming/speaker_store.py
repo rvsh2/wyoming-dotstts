@@ -28,6 +28,12 @@ class SpeakerStore:
     def __init__(self, speaker_dir: str | Path) -> None:
         self.speaker_dir = Path(speaker_dir)
 
+    @staticmethod
+    def is_safe_name(name: str) -> bool:
+        """A single plain directory component; '|' is reserved for the
+        language-encoded voice ids advertised to Home Assistant."""
+        return bool(name) and Path(name).name == name and name not in (".", "..") and "|" not in name
+
     def _profile_from_dir(self, profile_dir: Path) -> SpeakerProfile | InvalidSpeakerProfile:
         prompt_path = profile_dir / "prompt.txt"
         wav_paths = sorted(profile_dir.glob("*.wav"))
@@ -90,7 +96,7 @@ class SpeakerStore:
         # Direct lookup instead of scanning every profile; guard against path
         # traversal since the voice name comes from the client (reject anything
         # that is not a single, plain directory component).
-        if Path(requested).name == requested and requested not in (".", ".."):
+        if self.is_safe_name(requested):
             profile_dir = self.speaker_dir / requested
             if profile_dir.is_dir():
                 profile = self._profile_from_dir(profile_dir)

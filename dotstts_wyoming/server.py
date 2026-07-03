@@ -6,12 +6,16 @@ import argparse
 import asyncio
 import logging
 import os
+import shutil
+import subprocess
+import tempfile
+import wave
 from pathlib import Path
 from typing import Optional
 
 import uvicorn
-from fastapi import FastAPI, Header, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, File, Form, Header, HTTPException, Response, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from .audio import pcm16_wav_bytes
@@ -90,9 +94,114 @@ async def health() -> JSONResponse:
     return JSONResponse(service.health_payload())
 
 
+def _wav_duration_seconds(path: Path) -> Optional[float]:
+    try:
+        with wave.open(str(path)) as wav_file:
+            return round(wav_file.getnframes() / wav_file.getframerate(), 2)
+    except Exception:  # non-PCM or unreadable reference — duration is cosmetic
+        return None
+
+
+def _convert_reference_audio(source: Path, target: Path, *, normalize: bool) -> None:
+    """Convert an uploaded recording to mono 24 kHz WAV via ffmpeg.
+
+    Loudness normalization is on by default: the model clones the reference's
+    level, so a quiet upload would produce a quiet voice.
+    """
+    command = ["ffmpeg", "-y", "-i", str(source), "-ac", "1", "-ar", "24000"]
+    if normalize:
+        command += ["-af", "loudnorm=I=-18"]
+    command.append(str(target))
+    result = subprocess.run(command, capture_output=True, text=True, timeout=120)
+    if result.returncode != 0:
+        raise ValueError(f"ffmpeg could not convert the audio: {result.stderr.strip()[-400:]}")
+
+
 @app.get("/voices")
 async def voices() -> JSONResponse:
-    return JSONResponse({"voices": service.available_voices()})
+    valid, invalid = service.speaker_store._scan()
+    return JSONResponse(
+        {
+            "voices": [profile.name for profile in valid],
+            "valid": [
+                {
+                    "name": profile.name,
+                    "prompt_text": profile.prompt_text,
+                    "duration_seconds": _wav_duration_seconds(profile.prompt_audio_path),
+                }
+                for profile in valid
+            ],
+            "invalid": [
+                {"name": profile.name, "reason": profile.reason} for profile in invalid
+            ],
+            "default_voice": service.default_voice,
+        }
+    )
+
+
+@app.get("/voices/{name}/audio")
+async def voice_audio(name: str, x_api_token: Optional[str] = Header(default=None)) -> FileResponse:
+    _require_token(x_api_token)
+    try:
+        profile = service.speaker_store.get_profile(name)
+    except ValueError as err:
+        raise HTTPException(status_code=404, detail=str(err)) from err
+    return FileResponse(profile.prompt_audio_path, media_type="audio/wav")
+
+
+@app.post("/voices")
+async def create_voice(
+    name: str = Form(...),
+    prompt: str = Form(...),
+    normalize: bool = Form(True),
+    audio: UploadFile = File(...),
+    x_api_token: Optional[str] = Header(default=None),
+) -> JSONResponse:
+    _require_token(x_api_token)
+    name = name.strip()
+    prompt = prompt.strip()
+    if not service.speaker_store.is_safe_name(name):
+        raise HTTPException(status_code=400, detail="Voice name must be a plain directory name without '|'")
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Prompt transcript is required")
+
+    profile_dir = service.speaker_store.speaker_dir / name
+    loop = asyncio.get_running_loop()
+    with tempfile.TemporaryDirectory() as temp:
+        upload_path = Path(temp) / (Path(audio.filename or "upload").name or "upload")
+        upload_path.write_bytes(await audio.read())
+        converted_path = Path(temp) / "reference.wav"
+        try:
+            await loop.run_in_executor(
+                None,
+                lambda: _convert_reference_audio(upload_path, converted_path, normalize=normalize),
+            )
+        except ValueError as err:
+            raise HTTPException(status_code=400, detail=str(err)) from err
+
+        profile_dir.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(converted_path), profile_dir / "reference.wav")
+    (profile_dir / "prompt.txt").write_text(prompt + "\n", encoding="utf-8")
+
+    return JSONResponse(
+        {
+            "name": name,
+            "duration_seconds": _wav_duration_seconds(profile_dir / "reference.wav"),
+            "voices": service.available_voices(),
+        }
+    )
+
+
+@app.delete("/voices/{name}")
+async def delete_voice(name: str, x_api_token: Optional[str] = Header(default=None)) -> JSONResponse:
+    _require_token(x_api_token)
+    if not service.speaker_store.is_safe_name(name):
+        raise HTTPException(status_code=400, detail="Invalid voice name")
+    profile_dir = service.speaker_store.speaker_dir / name
+    if not profile_dir.is_dir():
+        raise HTTPException(status_code=404, detail=f"Voice profile '{name}' does not exist")
+    shutil.rmtree(profile_dir)
+    return JSONResponse({"deleted": name, "voices": service.available_voices()})
 
 
 @app.get("/settings")
@@ -131,8 +240,10 @@ async def update_settings(
 
 @app.post("/synthesize")
 async def synthesize(
-    request: SynthesisRequest, x_api_token: Optional[str] = Header(default=None)
-) -> JSONResponse:
+    request: SynthesisRequest,
+    format: Optional[str] = None,
+    x_api_token: Optional[str] = Header(default=None),
+) -> Response:
     _require_token(x_api_token)
     if not request.text.strip():
         raise HTTPException(status_code=400, detail="Text is required")
@@ -158,6 +269,8 @@ async def synthesize(
         raise HTTPException(status_code=400, detail=str(err)) from err
 
     wav_bytes = pcm16_wav_bytes(result.audio, sample_rate=result.sample_rate)
+    if format == "wav":
+        return Response(content=wav_bytes, media_type="audio/wav")
     return JSONResponse({**result.asdict(), "wav_bytes": len(wav_bytes)})
 
 

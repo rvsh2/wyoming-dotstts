@@ -1,5 +1,6 @@
 fastapi>=0.110.0,<1
 numpy>=2.2.6,<3
+python-multipart>=0.0.9,<1
 soundfile>=0.13.1,<1
 uvicorn[standard]>=0.29.0,<1
 wyoming>=1.8.0,<2

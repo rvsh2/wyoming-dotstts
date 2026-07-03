@@ -5,11 +5,11 @@
     "@rvsh2"
   ],
   "config_flow": true,
-  "dependencies": [],
+  "dependencies": ["frontend", "http"],
   "documentation": "https://github.com/rvsh2/wyoming-dotstts",
   "integration_type": "service",
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/rvsh2/wyoming-dotstts/issues",
   "requirements": [],
-  "version": "0.3.2"
+  "version": "0.4.0"
 }

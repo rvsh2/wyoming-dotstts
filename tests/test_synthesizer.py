@@ -111,6 +111,43 @@ class SynthesizerTests(unittest.TestCase):
         self.assertIsNone(synth.seed)
         self.assertEqual(synth.gain_db, 12.0)
 
+    def test_trim_silence_cuts_edges_with_padding(self):
+        synth = DotsTtsSynthesizer()
+        rate = 1000  # padding = 150 samples
+        audio = np.zeros(3000, dtype=np.float32)
+        audio[1000:1200] = 0.5
+        trimmed = synth._trim_silence(audio, rate)
+        self.assertEqual(len(trimmed), (1200 + 150) - (1000 - 150))
+        self.assertEqual(float(np.abs(trimmed).max()), 0.5)
+
+        synth.trim_silence = False
+        self.assertEqual(len(synth._trim_silence(audio, rate)), 3000)
+
+    def test_trim_silence_all_quiet_returns_empty(self):
+        synth = DotsTtsSynthesizer()
+        audio = np.full(1000, 5e-5, dtype=np.float32)
+        self.assertEqual(len(synth._trim_silence(audio, 1000)), 0)
+
+    def test_trim_silence_stream_drops_lead_and_tail(self):
+        synth = DotsTtsSynthesizer()
+        rate = 1000  # padding = 150 samples
+        silent = np.zeros(400, dtype=np.float32)
+        speech = np.full(400, 0.5, dtype=np.float32)
+        out = list(synth._trim_silence_stream([silent, silent, speech, speech, silent, silent], rate))
+        total = np.concatenate(out)
+        # lead: 150 padding + 800 speech + 150 tail padding
+        self.assertEqual(len(total), 150 + 800 + 150)
+        self.assertEqual(float(total[0]), 0.0)
+        self.assertEqual(float(total[-1]), 0.0)
+        self.assertEqual(float(np.abs(total).max()), 0.5)
+
+    def test_trim_silence_stream_keeps_mid_sentence_pause(self):
+        synth = DotsTtsSynthesizer()
+        silent = np.zeros(400, dtype=np.float32)
+        speech = np.full(400, 0.5, dtype=np.float32)
+        out = list(synth._trim_silence_stream([speech, silent, silent, speech], 1000))
+        self.assertEqual(len(np.concatenate(out)), 4 * 400)
+
     def test_configure_visible_device_maps_cpu_and_cuda_index(self):
         with patch.dict(os.environ, {}, clear=True):
             DotsTtsSynthesizer(device="cpu")._configure_visible_device()

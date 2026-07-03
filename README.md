@@ -77,6 +77,9 @@ Important environment variables:
 - `DOTSTTS_API_TOKEN` — when set, `/settings` and `/synthesize` on the HTTP API require the
   `X-API-Token` header; `/health` and `/voices` stay open
 - `DOTSTTS_SETTINGS_FILE`, default `/data/settings.json` — persistence for runtime settings
+- `DOTSTTS_NO_TRIM_SILENCE` — set to `1` to keep the model's leading/trailing silence
+  (by default it is trimmed to 150 ms of padding; the model pads generations with
+  seconds of dead air, which delays Assist responses)
 - `DOTSTTS_NORMALIZE_TEXT`
 - `DOTSTTS_OPTIMIZE`
 - `DOTSTTS_NO_WARMUP` — set to `1` to skip the startup warmup (see below)
@@ -98,7 +101,9 @@ To control them from Home Assistant, install the bundled custom integration via 
 HACS → custom repositories → add this repo as *Integration* → install *Wyoming dots.tts* →
 restart HA → add the integration with the server host, port `8180`, and the API token.
 It creates `number.wyoming_dots_tts_seed` (−1 = random) and `number.wyoming_dots_tts_gain`
-(dB slider) entities.
+(dB slider) entities, plus `binary_sensor.wyoming_dots_tts_ready` (model loaded) and
+`sensor.wyoming_dots_tts_voices` (profile count, names in attributes) for dashboards
+and automations.
 
 ## Startup warmup
 

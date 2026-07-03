@@ -5,6 +5,19 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased] - 2026-07-03
 
+Silence trimming + status entities.
+
+### Added
+
+- **Silence trimming (on by default)**: leading/trailing dead air is cut to
+  150 ms of padding in both the full and streaming synthesis paths — the model
+  pads generations with seconds of silence, which delayed Assist responses.
+  Disable with `--no-trim-silence` / `DOTSTTS_NO_TRIM_SILENCE=1`.
+- HA integration v0.2.0: `binary_sensor` *Ready* (model loaded) and `sensor`
+  *Voices* (profile count; names and invalid-profile reasons in attributes).
+
+## [71882be] - 2026-07-03
+
 Runtime settings (seed, gain) + Home Assistant integration.
 
 ### Added

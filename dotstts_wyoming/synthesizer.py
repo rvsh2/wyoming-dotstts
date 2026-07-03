@@ -19,6 +19,13 @@ LOGGER = logging.getLogger("dotstts-wyoming.synthesizer")
 DEFAULT_MODEL = "rednote-hilab/dots.tts-mf"
 DEFAULT_SAMPLE_RATE = 48000
 
+# Silence trimming: samples are "silent" below 2% of the observed peak (with an
+# absolute floor for all-quiet audio); 150 ms of padding is kept on each side
+# so speech does not start or stop abruptly.
+_SILENCE_RELATIVE_THRESHOLD = 0.02
+_SILENCE_ABSOLUTE_FLOOR = 1e-4
+_SILENCE_PADDING_SECONDS = 0.15
+
 
 @dataclass
 class SynthesisOptions:
@@ -63,6 +70,7 @@ class DotsTtsSynthesizer:
         normalize_text: bool = False,
         optimize: bool = False,
         gain_db: float = 0.0,
+        trim_silence: bool = True,
     ) -> None:
         self.model_name = model_name
         self.default_voice = default_voice
@@ -77,6 +85,7 @@ class DotsTtsSynthesizer:
         self.normalize_text = normalize_text
         self.optimize = optimize
         self.gain_db = gain_db
+        self.trim_silence = trim_silence
         self.backend = "dots.tts"
         self._runtime = None
         self._async_lock: asyncio.Lock | None = None
@@ -146,6 +155,64 @@ class DotsTtsSynthesizer:
             return audio
         return audio * np.float32(10.0 ** (self.gain_db / 20.0))
 
+    def _trim_silence(self, audio: np.ndarray, sample_rate: int) -> np.ndarray:
+        """Cut leading/trailing silence, keeping a short natural padding.
+
+        The model pads generations with long silent tails (seconds of dead air
+        for a short sentence), which directly delays Assist responses.
+        """
+        if not self.trim_silence or audio.size == 0:
+            return audio
+        threshold = max(float(np.abs(audio).max()) * _SILENCE_RELATIVE_THRESHOLD, _SILENCE_ABSOLUTE_FLOOR)
+        loud = np.flatnonzero(np.abs(audio) > threshold)
+        if loud.size == 0:
+            return audio[:0]
+        padding = int(_SILENCE_PADDING_SECONDS * sample_rate)
+        start = max(0, int(loud[0]) - padding)
+        end = min(len(audio), int(loud[-1]) + 1 + padding)
+        return audio[start:end]
+
+    def _trim_silence_stream(
+        self, chunks: Iterable[np.ndarray], sample_rate: int
+    ) -> Iterable[np.ndarray]:
+        """Streaming variant of _trim_silence.
+
+        Leading silent chunks are withheld until speech starts; silent runs are
+        buffered and only flushed when more speech follows, so the trailing
+        silent tail is dropped (except for a short padding). Chunk boundaries
+        are coarse (~0.2 s), which is accurate enough here.
+        """
+        padding = int(_SILENCE_PADDING_SECONDS * sample_rate)
+        peak = 0.0
+        started = False
+        pending: list[np.ndarray] = []
+
+        for chunk in chunks:
+            if chunk.size == 0:
+                continue
+            peak = max(peak, float(np.abs(chunk).max()))
+            threshold = max(peak * _SILENCE_RELATIVE_THRESHOLD, _SILENCE_ABSOLUTE_FLOOR)
+            silent = bool((np.abs(chunk) <= threshold).all())
+            if silent:
+                pending.append(chunk)
+                continue
+            if not started:
+                # First speech: trim the buffered leading silence to padding.
+                lead = np.concatenate(pending + [chunk]) if pending else chunk
+                loud = np.flatnonzero(np.abs(lead) > threshold)
+                started = True
+                pending = []
+                yield lead[max(0, int(loud[0]) - padding) :]
+                continue
+            for buffered in pending:
+                yield buffered
+            pending = []
+            yield chunk
+
+        if started and pending:
+            tail = np.concatenate(pending)
+            yield tail[:padding]
+
     def health_payload(self) -> dict:
         return {
             "status": "ok" if self.is_loaded() else "loading",
@@ -159,6 +226,7 @@ class DotsTtsSynthesizer:
             "seed": self.seed,
             "language": self.language,
             "gain_db": self.gain_db,
+            "trim_silence": self.trim_silence,
             "normalize_text": self.normalize_text,
             "optimize": self.optimize,
             "backend": self.backend,
@@ -237,7 +305,9 @@ class DotsTtsSynthesizer:
         result = self._runtime.generate(text=text, **runtime_kwargs)
 
         sample_rate = int(result.get("sample_rate", getattr(self._runtime, "sample_rate", DEFAULT_SAMPLE_RATE)))
-        audio = self._apply_gain(self._tensor_to_float_array(result["audio"]))
+        audio = self._apply_gain(
+            self._trim_silence(self._tensor_to_float_array(result["audio"]), sample_rate)
+        )
 
         return SynthesisResult(
             audio=audio,
@@ -264,5 +334,10 @@ class DotsTtsSynthesizer:
         runtime_kwargs = self._runtime_kwargs(profile, options)
         self._apply_seed(self._seed_for_options(options))
         sample_rate = int(getattr(self._runtime, "sample_rate", DEFAULT_SAMPLE_RATE))
-        for chunk in self._runtime.generate_stream(text=text, **runtime_kwargs):
-            yield self._apply_gain(self._tensor_to_float_array(chunk)), sample_rate
+        raw_chunks = (
+            self._tensor_to_float_array(chunk)
+            for chunk in self._runtime.generate_stream(text=text, **runtime_kwargs)
+        )
+        chunks = self._trim_silence_stream(raw_chunks, sample_rate) if self.trim_silence else raw_chunks
+        for chunk in chunks:
+            yield self._apply_gain(chunk), sample_rate

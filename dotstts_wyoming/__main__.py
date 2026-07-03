@@ -130,6 +130,12 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument("--optimize", action="store_true", default=_env_bool("DOTSTTS_OPTIMIZE", False))
     parser.add_argument(
+        "--no-trim-silence",
+        action="store_true",
+        default=_env_bool("DOTSTTS_NO_TRIM_SILENCE", False),
+        help="Keep the model's leading/trailing silence instead of trimming it.",
+    )
+    parser.add_argument(
         "--no-warmup",
         action="store_true",
         default=_env_bool("DOTSTTS_NO_WARMUP", False),
@@ -185,6 +191,7 @@ async def serve(args: argparse.Namespace) -> None:
         normalize_text=args.normalize_text,
         optimize=args.optimize,
         gain_db=args.gain_db,
+        trim_silence=not args.no_trim_silence,
     )
     # Settings changed at runtime via the HTTP API win over CLI/env defaults.
     persisted = load_settings(args.settings_file)

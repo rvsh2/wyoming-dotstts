@@ -22,7 +22,7 @@ from .const import CONF_API_TOKEN, CONF_HOST, CONF_PORT, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [Platform.NUMBER]
+PLATFORMS = [Platform.BINARY_SENSOR, Platform.NUMBER, Platform.SENSOR]
 SCAN_INTERVAL = timedelta(seconds=60)
 REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=15)
 

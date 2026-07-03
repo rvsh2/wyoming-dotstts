@@ -14,7 +14,15 @@ from pathlib import Path
 
 LOGGER = logging.getLogger("dotstts-wyoming.settings")
 
-_ALLOWED_KEYS = {"seed", "gain_db"}
+_ALLOWED_KEYS = {
+    "seed",
+    "gain_db",
+    "num_steps",
+    "trim_silence",
+    "default_voice",
+    "language",
+    "normalize_text",
+}
 
 
 def load_settings(path: str | Path) -> dict:

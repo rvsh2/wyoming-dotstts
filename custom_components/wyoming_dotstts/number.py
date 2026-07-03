@@ -2,18 +2,13 @@
 
 from __future__ import annotations
 
-import aiohttp
-
 from homeassistant.components.number import NumberEntity, NumberMode
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .entity import DotsTtsEntity
-
-REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=15)
 
 # The seed entity uses -1 for "random seed" (the server stores null): HA
 # number entities cannot express "unset" directly.
@@ -28,6 +23,7 @@ async def async_setup_entry(
         [
             DotsTtsSeedNumber(entry, runtime),
             DotsTtsGainNumber(entry, runtime),
+            DotsTtsNumStepsNumber(entry, runtime),
         ]
     )
 
@@ -35,19 +31,6 @@ async def async_setup_entry(
 class _DotsTtsSettingsNumber(DotsTtsEntity, NumberEntity):
     def __init__(self, entry: ConfigEntry, runtime: dict) -> None:
         super().__init__(entry, runtime, self.setting_key)
-
-    async def _post_settings(self, payload: dict) -> None:
-        try:
-            async with self._runtime["session"].post(
-                f"{self._runtime['base']}/settings",
-                json=payload,
-                headers=self._runtime["headers"],
-                timeout=REQUEST_TIMEOUT,
-            ) as response:
-                response.raise_for_status()
-        except Exception as error:
-            raise HomeAssistantError(f"Failed to update dots.tts settings: {error}") from error
-        await self.coordinator.async_request_refresh()
 
 
 class DotsTtsSeedNumber(_DotsTtsSettingsNumber):
@@ -87,3 +70,21 @@ class DotsTtsGainNumber(_DotsTtsSettingsNumber):
 
     async def async_set_native_value(self, value: float) -> None:
         await self._post_settings({"gain_db": value})
+
+
+class DotsTtsNumStepsNumber(_DotsTtsSettingsNumber):
+    setting_key = "num_steps"
+
+    _attr_name = "Diffusion steps"
+    _attr_icon = "mdi:stairs"
+    _attr_mode = NumberMode.SLIDER
+    _attr_native_min_value = 1
+    _attr_native_max_value = 16
+    _attr_native_step = 1
+
+    @property
+    def native_value(self) -> int:
+        return int(self._settings.get("num_steps") or 4)
+
+    async def async_set_native_value(self, value: float) -> None:
+        await self._post_settings({"num_steps": int(value)})

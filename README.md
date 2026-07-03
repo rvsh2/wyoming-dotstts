@@ -100,10 +100,12 @@ Changes apply to every following synthesis (Wyoming and HTTP) and survive restar
 To control them from Home Assistant, install the bundled custom integration via HACS:
 HACS → custom repositories → add this repo as *Integration* → install *Wyoming dots.tts* →
 restart HA → add the integration with the server host, port `8180`, and the API token.
-It creates `number.wyoming_dots_tts_seed` (−1 = random) and `number.wyoming_dots_tts_gain`
-(dB slider) entities, plus `binary_sensor.wyoming_dots_tts_ready` (model loaded) and
-`sensor.wyoming_dots_tts_voices` (profile count, names in attributes) for dashboards
-and automations.
+It creates entities for every runtime setting: `number` *Seed* (−1 = random), *Gain* (dB),
+*Diffusion steps* (quality ↔ speed); `select` *Default voice* and *Language* (`auto` =
+first profile / auto-detect); `switch` *Trim silence* and *Normalize text*; plus
+`binary_sensor` *Ready* (model loaded) and `sensor` *Voices* (profile count, names in
+attributes) for dashboards and automations. Model/device/precision still require a
+container restart and stay in `.env`.
 
 ## Startup warmup
 

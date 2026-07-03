@@ -5,6 +5,19 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased] - 2026-07-03
 
+Full runtime settings set in the HA integration.
+
+### Added
+
+- `/settings` now also accepts `num_steps` (1–64), `trim_silence`,
+  `default_voice` (validated against existing profiles), `language`, and
+  `normalize_text` — all persisted and applied without a restart.
+- HA integration v0.3.0: *Diffusion steps* number, *Default voice* and
+  *Language* selects (`auto` = server default), *Trim silence* and
+  *Normalize text* switches.
+
+## [e7b39d6] - 2026-07-03
+
 Silence trimming + status entities.
 
 ### Added

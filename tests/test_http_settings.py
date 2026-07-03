@@ -33,7 +33,18 @@ class SettingsEndpointTests(unittest.TestCase):
         with patch.dict(os.environ, {"DOTSTTS_API_TOKEN": ""}):
             response = self.client.get("/settings")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"seed": None, "gain_db": 0.0})
+        self.assertEqual(
+            response.json(),
+            {
+                "seed": None,
+                "gain_db": 0.0,
+                "num_steps": 4,
+                "trim_silence": True,
+                "default_voice": None,
+                "language": None,
+                "normalize_text": False,
+            },
+        )
 
     def test_settings_requires_token_when_configured(self):
         with patch.dict(os.environ, {"DOTSTTS_API_TOKEN": "sekret"}):
@@ -51,12 +62,14 @@ class SettingsEndpointTests(unittest.TestCase):
         with patch.dict(os.environ, {"DOTSTTS_API_TOKEN": ""}):
             response = self.client.post("/settings", json={"seed": 42, "gain_db": 6.5})
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"seed": 42, "gain_db": 6.5})
+        self.assertEqual(response.json()["seed"], 42)
+        self.assertEqual(response.json()["gain_db"], 6.5)
         self.assertEqual(http_server.service.seed, 42)
         self.assertEqual(http_server.service.gain_db, 6.5)
-        self.assertEqual(
-            json.loads(self.settings_file.read_text()), {"seed": 42, "gain_db": 6.5}
-        )
+        persisted = json.loads(self.settings_file.read_text())
+        self.assertEqual(persisted["seed"], 42)
+        self.assertEqual(persisted["gain_db"], 6.5)
+        self.assertEqual(persisted["num_steps"], 4)
 
     def test_post_null_seed_restores_random(self):
         http_server.service.seed = 42
@@ -69,7 +82,47 @@ class SettingsEndpointTests(unittest.TestCase):
         http_server.service.seed = 42
         with patch.dict(os.environ, {"DOTSTTS_API_TOKEN": ""}):
             response = self.client.post("/settings", json={"gain_db": 3})
-        self.assertEqual(response.json(), {"seed": 42, "gain_db": 3.0})
+        self.assertEqual(response.json()["seed"], 42)
+        self.assertEqual(response.json()["gain_db"], 3.0)
+
+    def test_post_full_settings_set(self):
+        profile = Path(self.temp.name) / "mira"
+        profile.mkdir()
+        (profile / "reference.wav").write_bytes(b"wav")
+        (profile / "prompt.txt").write_text("Prompt.", encoding="utf-8")
+
+        with patch.dict(os.environ, {"DOTSTTS_API_TOKEN": ""}):
+            response = self.client.post(
+                "/settings",
+                json={
+                    "num_steps": 8,
+                    "trim_silence": False,
+                    "default_voice": "mira",
+                    "language": "en",
+                    "normalize_text": True,
+                },
+            )
+        body = response.json()
+        self.assertEqual(body["num_steps"], 8)
+        self.assertFalse(body["trim_silence"])
+        self.assertEqual(body["default_voice"], "mira")
+        self.assertEqual(body["language"], "en")
+        self.assertTrue(body["normalize_text"])
+
+    def test_post_unknown_voice_rejected(self):
+        with patch.dict(os.environ, {"DOTSTTS_API_TOKEN": ""}):
+            response = self.client.post("/settings", json={"default_voice": "nope"})
+        self.assertEqual(response.status_code, 400)
+
+    def test_post_null_voice_and_language_reset(self):
+        http_server.service.default_voice = "x"
+        http_server.service.language = "pl"
+        with patch.dict(os.environ, {"DOTSTTS_API_TOKEN": ""}):
+            body = self.client.post(
+                "/settings", json={"default_voice": None, "language": None}
+            ).json()
+        self.assertIsNone(body["default_voice"])
+        self.assertIsNone(body["language"])
 
     def test_gain_out_of_range_rejected(self):
         with patch.dict(os.environ, {"DOTSTTS_API_TOKEN": ""}):

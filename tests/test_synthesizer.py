@@ -105,11 +105,37 @@ class SynthesizerTests(unittest.TestCase):
 
     def test_runtime_settings_roundtrip(self):
         synth = DotsTtsSynthesizer(seed=7, gain_db=0.0)
-        self.assertEqual(synth.runtime_settings(), {"seed": 7, "gain_db": 0.0})
+        self.assertEqual(
+            synth.runtime_settings(),
+            {
+                "seed": 7,
+                "gain_db": 0.0,
+                "num_steps": 4,
+                "trim_silence": True,
+                "default_voice": None,
+                "language": None,
+                "normalize_text": False,
+            },
+        )
 
-        synth.apply_runtime_settings({"seed": None, "gain_db": 12})
+        synth.apply_runtime_settings(
+            {
+                "seed": None,
+                "gain_db": 12,
+                "num_steps": 8,
+                "trim_silence": False,
+                "default_voice": "mira",
+                "language": "en",
+                "normalize_text": True,
+            }
+        )
         self.assertIsNone(synth.seed)
         self.assertEqual(synth.gain_db, 12.0)
+        self.assertEqual(synth.num_steps, 8)
+        self.assertFalse(synth.trim_silence)
+        self.assertEqual(synth.default_voice, "mira")
+        self.assertEqual(synth.language, "en")
+        self.assertTrue(synth.normalize_text)
 
     def test_trim_silence_cuts_edges_with_padding(self):
         synth = DotsTtsSynthesizer()

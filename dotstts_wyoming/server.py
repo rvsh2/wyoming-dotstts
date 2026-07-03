@@ -51,10 +51,19 @@ class SynthesisRequest(BaseModel):
 
 
 class SettingsRequest(BaseModel):
-    # seed=null explicitly restores random generation, so "field present"
-    # (model_fields_set) rather than "field not None" decides what changes.
+    # seed=null explicitly restores random generation (and language/voice=null
+    # restore auto/first-profile), so "field present" (model_fields_set)
+    # rather than "field not None" decides what changes.
     seed: int | None = Field(default=None, ge=0)
     gain_db: float | None = Field(default=None, ge=-60, le=60)
+    num_steps: int | None = Field(default=None, ge=1, le=64)
+    trim_silence: bool | None = None
+    default_voice: str | None = None
+    language: str | None = None
+    normalize_text: bool | None = None
+
+
+_SETTINGS_KEYS = tuple(SettingsRequest.model_fields)
 
 
 def render_index() -> str:
@@ -93,10 +102,15 @@ async def update_settings(
     request: SettingsRequest, x_api_token: Optional[str] = Header(default=None)
 ) -> JSONResponse:
     _require_token(x_api_token)
-    updates = {key: getattr(request, key) for key in ("seed", "gain_db") if key in request.model_fields_set}
+    updates = {key: getattr(request, key) for key in _SETTINGS_KEYS if key in request.model_fields_set}
+    # Nullable-but-not-optional fields: null means "back to default".
+    for key, default in (("gain_db", 0.0), ("num_steps", 4), ("trim_silence", True), ("normalize_text", False)):
+        if key in updates and updates[key] is None:
+            updates[key] = default
+    voice = updates.get("default_voice")
+    if voice and voice not in service.available_voices():
+        raise HTTPException(status_code=400, detail=f"Unknown voice profile '{voice}'")
     if updates:
-        if updates.get("gain_db") is None and "gain_db" in updates:
-            updates["gain_db"] = 0.0
         service.apply_runtime_settings(updates)
         save_settings(settings_path, service.runtime_settings())
     return JSONResponse(service.runtime_settings())

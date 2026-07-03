@@ -141,7 +141,15 @@ class DotsTtsSynthesizer:
 
     def runtime_settings(self) -> dict:
         """Settings adjustable at runtime (via the HTTP management API)."""
-        return {"seed": self.seed, "gain_db": self.gain_db}
+        return {
+            "seed": self.seed,
+            "gain_db": self.gain_db,
+            "num_steps": self.num_steps,
+            "trim_silence": self.trim_silence,
+            "default_voice": self.default_voice,
+            "language": self.language,
+            "normalize_text": self.normalize_text,
+        }
 
     def apply_runtime_settings(self, settings: dict) -> None:
         if "seed" in settings:
@@ -149,6 +157,16 @@ class DotsTtsSynthesizer:
             self.seed = int(seed) if seed is not None else None
         if "gain_db" in settings:
             self.gain_db = float(settings["gain_db"])
+        if "num_steps" in settings:
+            self.num_steps = int(settings["num_steps"])
+        if "trim_silence" in settings:
+            self.trim_silence = bool(settings["trim_silence"])
+        if "default_voice" in settings:
+            self.default_voice = settings["default_voice"] or None
+        if "language" in settings:
+            self.language = settings["language"] or None
+        if "normalize_text" in settings:
+            self.normalize_text = bool(settings["normalize_text"])
 
     def _apply_gain(self, audio: np.ndarray) -> np.ndarray:
         if not self.gain_db:

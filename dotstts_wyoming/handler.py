@@ -73,8 +73,9 @@ class DotsTtsEventHandler(AsyncEventHandler):
                 synthesize = Synthesize.from_event(event)
                 if self._streaming:
                     return True
+                voice_name, voice_language = self._voice_from_event(event)
                 return await self._handle_full_synthesize(
-                    synthesize, voice_name=self._voice_name_from_event(event)
+                    synthesize, voice_name=voice_name, voice_language=voice_language
                 )
 
             if self.cli_args.no_streaming:
@@ -85,8 +86,10 @@ class DotsTtsEventHandler(AsyncEventHandler):
                 self._streaming = True
                 self._stream_started = False
                 self._chunker = SentenceChunker()
-                self._voice_name = self._voice_name_from_event(event)
+                self._voice_name, voice_language = self._voice_from_event(event)
                 self._options = self._options_from_context(getattr(stream_start, "context", None))
+                if self._options.language is None:
+                    self._options.language = voice_language
                 return True
 
             if SynthesizeChunk.is_type(event.type):
@@ -125,21 +128,35 @@ class DotsTtsEventHandler(AsyncEventHandler):
         self._chunker = SentenceChunker()
 
     @staticmethod
-    def _voice_name_from_event(event: Event) -> Optional[str]:
-        """Voice profile name from the raw event, or None.
+    def _voice_from_event(event: Event) -> tuple[Optional[str], Optional[str]]:
+        """(profile name, language) from the raw event voice payload.
 
         Reads event.data directly because wyoming's SynthesizeVoice.from_dict
         turns a language-only voice ({"language": "pl"}) into name="pl", which
         would then be looked up as a (nonexistent) profile directory instead of
         falling back to the default voice.
+
+        Voice ids advertised to HA encode the language as "profile|lang"
+        (HA only transmits the picked voice id, never the pipeline language);
+        decode it here. An explicit voice.language (from non-HA clients) is
+        honored when the id does not encode one.
         """
         voice = (event.data or {}).get("voice")
         if isinstance(voice, dict):
-            return voice.get("name")
-        return getattr(voice, "name", None)
+            name, language = voice.get("name"), voice.get("language")
+        else:
+            name, language = getattr(voice, "name", None), getattr(voice, "language", None)
+        if name and "|" in name:
+            name, _, encoded = name.partition("|")
+            language = encoded or language
+        return name or None, language
 
-    async def _handle_full_synthesize(self, synthesize: Synthesize, *, voice_name: Optional[str]) -> bool:
+    async def _handle_full_synthesize(
+        self, synthesize: Synthesize, *, voice_name: Optional[str], voice_language: Optional[str]
+    ) -> bool:
         options = self._options_from_context(getattr(synthesize, "context", None))
+        if options.language is None:
+            options.language = voice_language
         loop = asyncio.get_running_loop()
         async with self.synthesizer.get_async_lock():
             result = await loop.run_in_executor(

@@ -51,10 +51,10 @@ def _env_optional_int(name: str) -> int | None:
     return int(value)
 
 
-def _voice_entry(name: str, languages: list[str]) -> TtsVoice:
+def _voice_entry(name: str, languages: list[str], *, description: str | None = None) -> TtsVoice:
     return TtsVoice(
         name=name,
-        description=name,
+        description=description or name,
         attribution=Attribution(
             name="Local reference prompt",
             url="https://github.com/rednote-hilab/dots.tts",
@@ -73,7 +73,17 @@ def build_info(args: argparse.Namespace, synthesizer: DotsTtsSynthesizer) -> Inf
     # Always advertise at least one voice, even when no reference prompts exist on
     # disk, so HA can create the entity.
     names = synthesizer.available_voices() or [args.voice or "default"]
-    voices = [_voice_entry(name, languages) for name in names]
+    # One entry per profile per language, with the language encoded in the
+    # voice id ("profile|lang"). HA's Wyoming integration never transmits the
+    # pipeline language — only the picked voice id — so per-language ids are
+    # the only way the pipeline's language can reach synthesis. HA shows the
+    # description ("profile") in the voice dropdown, filtered by pipeline
+    # language, so each pipeline sees each profile once.
+    voices = [
+        _voice_entry(f"{name}|{language}", [language], description=name)
+        for name in names
+        for language in languages
+    ]
     return Info(
         tts=[
             TtsProgram(

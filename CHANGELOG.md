@@ -5,6 +5,20 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased] - 2026-07-03
 
+### Added
+
+- **Assist pipeline language reaches synthesis end-to-end**: voices are
+  advertised once per language with the language encoded in the voice id
+  (`profile|lang`), because HA's Wyoming integration transmits only the picked
+  voice id. The handler decodes it (and honors explicit `voice.language` from
+  non-HA clients). Priority: `context` > voice > *Language* setting > auto.
+
+### Changed
+
+- Integration renamed to **dots.TTS**; logo added (`brands/`, shown in HACS).
+
+## [Unreleased] - 2026-07-03
+
 QA pass: 10 verified findings fixed.
 
 ### Fixed

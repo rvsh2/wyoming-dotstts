@@ -2,8 +2,8 @@ import os
 import unittest
 from unittest.mock import patch
 
-from dotstts_wyoming.__main__ import parse_args
-from dotstts_wyoming.synthesizer import DEFAULT_MODEL
+from dotstts_wyoming.__main__ import build_info, parse_args
+from dotstts_wyoming.synthesizer import DEFAULT_MODEL, DotsTtsSynthesizer
 
 
 class CliTests(unittest.TestCase):
@@ -79,6 +79,31 @@ class CliTests(unittest.TestCase):
 
     def test_default_model_is_mf(self):
         self.assertEqual(DEFAULT_MODEL, "rednote-hilab/dots.tts-mf")
+
+    def test_build_info_encodes_language_in_voice_ids(self):
+        args = parse_args(["--language", "pl", "--voice", "default"])
+        synthesizer = DotsTtsSynthesizer(speaker_dir="/nonexistent", language="pl")
+        info = build_info(args, synthesizer)
+        voices = info.tts[0].voices
+        self.assertEqual([v.name for v in voices], ["default|pl"])
+        self.assertEqual(voices[0].description, "default")
+        self.assertEqual(voices[0].languages, ["pl"])
+
+    def test_build_info_advertises_effective_runtime_language(self):
+        args = parse_args(["--language", "pl", "--voice", "default"])
+        synthesizer = DotsTtsSynthesizer(speaker_dir="/nonexistent", language="pl")
+        synthesizer.apply_runtime_settings({"language": "en"})
+        info = build_info(args, synthesizer)
+        self.assertEqual([v.name for v in info.tts[0].voices], ["default|en"])
+
+    def test_build_info_multilingual_when_language_auto(self):
+        args = parse_args(["--voice", "default"])
+        synthesizer = DotsTtsSynthesizer(speaker_dir="/nonexistent")
+        info = build_info(args, synthesizer)
+        names = [v.name for v in info.tts[0].voices]
+        self.assertIn("default|pl", names)
+        self.assertIn("default|en", names)
+        self.assertGreater(len(names), 5)
 
 
 if __name__ == "__main__":

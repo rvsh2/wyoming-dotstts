@@ -172,6 +172,41 @@ class HandlerTests(unittest.TestCase):
         self.run_async(handler.handle_event(Event("synthesize", {"text": "Ala."})))
         self.assertEqual([event.type for event in handler.events][0], "audio-start")
 
+    def test_voice_id_with_encoded_language(self):
+        calls = []
+
+        class FakeSynthesizer(_LockMixin):
+            def synthesize(self, text, *, voice_name, options):
+                calls.append((voice_name, options.language))
+                return SynthesisResult(
+                    audio=[0.1],
+                    sample_rate=48000,
+                    voice="mira",
+                    language=options.language,
+                    processing_time=0.1,
+                )
+
+        handler = CollectingHandler(
+            cli_args=SimpleNamespace(no_streaming=False, samples_per_chunk=8),
+            synthesizer=FakeSynthesizer(),
+        )
+
+        # Language encoded in the advertised voice id ("profile|lang").
+        self.run_async(
+            handler.handle_event(Event("synthesize", {"text": "Hi.", "voice": {"name": "mira|en"}}))
+        )
+        # Explicit context language wins over the encoded one.
+        self.run_async(
+            handler.handle_event(
+                Event(
+                    "synthesize",
+                    {"text": "Hi.", "voice": {"name": "mira|en"}, "context": {"language": "de"}},
+                )
+            )
+        )
+
+        self.assertEqual(calls, [("mira", "en"), ("mira", "de")])
+
     def test_language_only_voice_falls_back_to_default(self):
         calls = []
 

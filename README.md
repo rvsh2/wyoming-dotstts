@@ -74,6 +74,11 @@ Important environment variables:
   list is advertised (dots.tts auto-detects the input language). Home Assistant's TTS
   entity needs at least one announced language to register, so the server always advertises
   at least one language (and at least one voice) even before a profile exists.
+  Voices are advertised once per language with the language encoded in the voice id
+  (`profile|lang`): HA's Wyoming integration transmits only the picked voice id, so this
+  is how the Assist pipeline's language reaches synthesis — pick the voice in a pipeline
+  and its language conditions the model. Per-request language priority:
+  `context` > voice id / `voice.language` > the *Language* runtime setting > auto-detect.
 - `DOTSTTS_DEFAULT_VOICE` — voice profile used when a request names none; falls back to
   the first profile in the speaker dir when unset
 - `DOTSTTS_GAIN_DB`, default `0` — output gain in dB (audio is clipped to [-1, 1] before PCM)

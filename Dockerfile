@@ -5,6 +5,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     DOTSTTS_MODEL=rednote-hilab/dots.tts-mf \
     DOTSTTS_DEVICE=cuda \
+    TORCHINDUCTOR_CACHE_DIR=/data/cache/torchinductor \
+    TRITON_CACHE_DIR=/data/cache/triton \
     DOTSTTS_PRECISION=bfloat16 \
     DOTSTTS_NUM_STEPS=4 \
     DOTSTTS_GUIDANCE_SCALE=1.2 \
@@ -25,6 +27,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt constraints.txt ./
 RUN pip install --upgrade pip \
     && pip install -r requirements.txt -c constraints.txt
+
+# torch.compile (DOTSTTS_OPTIMIZE) JIT-compiles Triton kernels at warmup and
+# needs a C compiler inside the image.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gcc \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY . .
 RUN pip install .

@@ -7,6 +7,15 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Sub-realtime synthesis with `DOTSTTS_OPTIMIZE=1`**: the image now ships a
+  C compiler (torch.compile/Triton needs one — previously the flag crashed at
+  warmup with "Failed to find C compiler") and persists compile caches to
+  `/data/cache/{torchinductor,triton}`, so only the first start pays the
+  multi-minute compilation (warm start: ~5 s warmup). Measured on an
+  RTX 3090: RTF 1.20 → 0.59 (batch) / 0.72 (streamed), first audio chunk
+  after ~0.3 s — streaming synthesis no longer stutters behind playback and
+  is enabled in compose again.
+
 - **Voice management panel in the HA sidebar** (integration v0.4.0): list,
   play, upload (any audio format — converted to mono 24 kHz WAV with optional
   loudness normalization), delete and test-synthesize voice profiles. The

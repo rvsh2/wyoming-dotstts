@@ -5,14 +5,17 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import os
 from pathlib import Path
+from typing import Optional
 
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .audio import pcm16_wav_bytes
+from .runtime_settings import save_settings
 from .synthesizer import DEFAULT_MODEL, DotsTtsSynthesizer, SynthesisOptions
 
 
@@ -23,6 +26,19 @@ service = DotsTtsSynthesizer(
     speaker_dir="/data/speakers",
     model_dir="/data/models",
 )
+settings_path = Path(os.getenv("DOTSTTS_SETTINGS_FILE", "/data/settings.json"))
+
+
+def _require_token(x_api_token: Optional[str]) -> None:
+    """Reject the request when DOTSTTS_API_TOKEN is configured and not matched.
+
+    Read at request time (not import time) so tests and runtime reconfiguration
+    work without reloading the module. No token configured = open access, which
+    keeps the plain localhost debug setup working.
+    """
+    expected = os.getenv("DOTSTTS_API_TOKEN", "").strip()
+    if expected and x_api_token != expected:
+        raise HTTPException(status_code=401, detail="Invalid or missing X-API-Token header")
 
 
 class SynthesisRequest(BaseModel):
@@ -32,6 +48,13 @@ class SynthesisRequest(BaseModel):
     num_steps: int | None = None
     guidance_scale: float | None = None
     seed: int | None = None
+
+
+class SettingsRequest(BaseModel):
+    # seed=null explicitly restores random generation, so "field present"
+    # (model_fields_set) rather than "field not None" decides what changes.
+    seed: int | None = Field(default=None, ge=0)
+    gain_db: float | None = Field(default=None, ge=-60, le=60)
 
 
 def render_index() -> str:
@@ -59,8 +82,31 @@ async def voices() -> JSONResponse:
     return JSONResponse({"voices": service.available_voices()})
 
 
+@app.get("/settings")
+async def get_settings(x_api_token: Optional[str] = Header(default=None)) -> JSONResponse:
+    _require_token(x_api_token)
+    return JSONResponse(service.runtime_settings())
+
+
+@app.post("/settings")
+async def update_settings(
+    request: SettingsRequest, x_api_token: Optional[str] = Header(default=None)
+) -> JSONResponse:
+    _require_token(x_api_token)
+    updates = {key: getattr(request, key) for key in ("seed", "gain_db") if key in request.model_fields_set}
+    if updates:
+        if updates.get("gain_db") is None and "gain_db" in updates:
+            updates["gain_db"] = 0.0
+        service.apply_runtime_settings(updates)
+        save_settings(settings_path, service.runtime_settings())
+    return JSONResponse(service.runtime_settings())
+
+
 @app.post("/synthesize")
-async def synthesize(request: SynthesisRequest) -> JSONResponse:
+async def synthesize(
+    request: SynthesisRequest, x_api_token: Optional[str] = Header(default=None)
+) -> JSONResponse:
+    _require_token(x_api_token)
     if not request.text.strip():
         raise HTTPException(status_code=400, detail="Text is required")
 

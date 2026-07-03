@@ -1,0 +1,22 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Wyoming dots.tts server",
+        "description": "Connect to the HTTP management API of the wyoming-dotstts server.",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "api_token": "API token (DOTSTTS_API_TOKEN)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to the server",
+      "invalid_auth": "Invalid API token"
+    },
+    "abort": {
+      "already_configured": "This server is already configured"
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "domain": "wyoming_dotstts",
+  "name": "Wyoming dots.tts",
+  "codeowners": ["@rvsh2"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/rvsh2/wyoming-dotstts",
+  "integration_type": "service",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/rvsh2/wyoming-dotstts/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

@@ -92,6 +92,25 @@ class SynthesizerTests(unittest.TestCase):
         self.assertEqual(chunks, [([0.5, -0.5], 48000), ([0.25], 48000)])
         self.assertEqual(runtime.stream_calls[0]["text"], "Streaming.")
 
+    def test_gain_db_scales_output_audio(self):
+        temp = self._speaker_dir()
+        self.addCleanup(temp.cleanup)
+        synth = DotsTtsSynthesizer(speaker_dir=temp.name, default_voice="mira", gain_db=6.0)
+        synth._runtime = _FakeRuntime()
+
+        result = synth.synthesize("Głośniej.")
+
+        expected = 0.25 * 10 ** (6.0 / 20.0)
+        self.assertAlmostEqual(float(result.audio[1]), expected, places=5)
+
+    def test_runtime_settings_roundtrip(self):
+        synth = DotsTtsSynthesizer(seed=7, gain_db=0.0)
+        self.assertEqual(synth.runtime_settings(), {"seed": 7, "gain_db": 0.0})
+
+        synth.apply_runtime_settings({"seed": None, "gain_db": 12})
+        self.assertIsNone(synth.seed)
+        self.assertEqual(synth.gain_db, 12.0)
+
     def test_configure_visible_device_maps_cpu_and_cuda_index(self):
         with patch.dict(os.environ, {}, clear=True):
             DotsTtsSynthesizer(device="cpu")._configure_visible_device()

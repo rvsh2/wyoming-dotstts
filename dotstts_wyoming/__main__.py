@@ -10,8 +10,11 @@ import time
 from functools import partial
 from typing import Optional
 
+from pathlib import Path
+
 from . import __version__
 from .handler import DotsTtsEventHandler
+from .runtime_settings import load_settings
 from .speaker_store import SpeakerStore
 from .synthesizer import DEFAULT_MODEL, DotsTtsSynthesizer, SynthesisOptions
 from .wyoming_protocol import (
@@ -108,6 +111,17 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         help="CFG scale. For dots.tts-mf this is accepted but ignored by the model.",
     )
     parser.add_argument("--seed", type=int, default=_env_optional_int("DOTSTTS_SEED"))
+    parser.add_argument(
+        "--gain-db",
+        type=float,
+        default=float(os.getenv("DOTSTTS_GAIN_DB", "0")),
+        help="Output gain applied to synthesized audio (clipped to [-1, 1] before PCM).",
+    )
+    parser.add_argument(
+        "--settings-file",
+        default=os.getenv("DOTSTTS_SETTINGS_FILE", "/data/settings.json"),
+        help="Where runtime settings changed via the HTTP API are persisted.",
+    )
     parser.add_argument("--language", default=os.getenv("DOTSTTS_LANGUAGE"))
     parser.add_argument(
         "--normalize-text",
@@ -134,12 +148,14 @@ async def _serve_http_debug(
     *,
     host: str,
     port: int,
+    settings_file: str,
 ) -> None:
     import uvicorn
 
     from . import server as http_server
 
     http_server.service = synthesizer
+    http_server.settings_path = Path(settings_file)
     config = uvicorn.Config(http_server.app, host=host, port=port, log_level="info")
     server = uvicorn.Server(config)
     # A debug-only endpoint must never take the Wyoming TTS service down with
@@ -168,7 +184,13 @@ async def serve(args: argparse.Namespace) -> None:
         language=args.language,
         normalize_text=args.normalize_text,
         optimize=args.optimize,
+        gain_db=args.gain_db,
     )
+    # Settings changed at runtime via the HTTP API win over CLI/env defaults.
+    persisted = load_settings(args.settings_file)
+    if persisted:
+        synthesizer.apply_runtime_settings(persisted)
+        LOGGER.info("Applied persisted runtime settings from %s: %s", args.settings_file, persisted)
     SpeakerStore(args.speaker_dir).ensure_default_profile_hint(args.voice)
     synthesizer.load()
     # Passed as a factory so the voice list is re-scanned on every Describe:
@@ -213,7 +235,13 @@ async def serve(args: argparse.Namespace) -> None:
 
     if args.http_host:
         LOGGER.info("HTTP debug: http://%s:%s", args.http_host, args.http_port)
-        tasks.append(asyncio.create_task(_serve_http_debug(synthesizer, host=args.http_host, port=args.http_port)))
+        tasks.append(
+            asyncio.create_task(
+                _serve_http_debug(
+                    synthesizer, host=args.http_host, port=args.http_port, settings_file=args.settings_file
+                )
+            )
+        )
 
     done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
     for task in pending:

@@ -5,6 +5,24 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased] - 2026-07-03
 
+Runtime settings (seed, gain) + Home Assistant integration.
+
+### Added
+
+- **`GET`/`POST /settings`** on the HTTP management API: runtime-adjustable
+  `seed` (null = random) and `gain_db` (output gain, ±60 dB max), applied to
+  all synthesis (Wyoming + HTTP) and persisted to `/data/settings.json`
+  across restarts. New env/CLI: `DOTSTTS_GAIN_DB`, `DOTSTTS_SETTINGS_FILE`.
+- **Token auth** (`DOTSTTS_API_TOKEN`, `X-API-Token` header) for `/settings`
+  and `/synthesize`; `/health` and `/voices` stay open. Compose publishes
+  port 8180 on the LAN again now that it is authenticated.
+- **HACS custom integration `wyoming_dotstts`** (bundled in
+  `custom_components/`): config flow (host/port/token) and `number` entities
+  for seed (−1 = random) and gain (dB slider) that drive `/settings`.
+- Tests for gain scaling, settings persistence, and endpoint auth (35 total).
+
+## [c097f9d] - 2026-07-03
+
 Code-review pass: reproducibility, performance, and hygiene fixes.
 
 ### Fixed

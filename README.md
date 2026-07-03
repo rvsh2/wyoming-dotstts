@@ -5,7 +5,9 @@ Wyoming TTS server for Home Assistant backed by `rednote-hilab/dots.tts`.
 ## What It Does
 
 - exposes Wyoming TTS on port `10201`
-- exposes optional HTTP debug on port `8180` (its failure never takes the Wyoming service down); in compose it is published on `127.0.0.1` only — it has no auth and can trigger GPU synthesis
+- exposes an HTTP management/debug API on port `8180` (its failure never takes the Wyoming service down); `/settings` and `/synthesize` are protected by `DOTSTTS_API_TOKEN` (`X-API-Token` header)
+- runtime-adjustable **seed** (deterministic output) and **output gain** via `POST /settings`, persisted across restarts in `/data/settings.json`
+- ships a HACS custom integration (`custom_components/wyoming_dotstts`) that exposes the seed and gain as `number` entities in Home Assistant
 - uses `rednote-hilab/dots.tts-mf` by default
 - publishes local voice-cloning profiles from `data/speakers`
 - uses native `generate_stream` for streaming Wyoming requests
@@ -71,9 +73,32 @@ Important environment variables:
   at least one language (and at least one voice) even before a profile exists.
 - `DOTSTTS_DEFAULT_VOICE` — voice profile used when a request names none; falls back to
   the first profile in the speaker dir when unset
+- `DOTSTTS_GAIN_DB`, default `0` — output gain in dB (audio is clipped to [-1, 1] before PCM)
+- `DOTSTTS_API_TOKEN` — when set, `/settings` and `/synthesize` on the HTTP API require the
+  `X-API-Token` header; `/health` and `/voices` stay open
+- `DOTSTTS_SETTINGS_FILE`, default `/data/settings.json` — persistence for runtime settings
 - `DOTSTTS_NORMALIZE_TEXT`
 - `DOTSTTS_OPTIMIZE`
 - `DOTSTTS_NO_WARMUP` — set to `1` to skip the startup warmup (see below)
+
+## Runtime settings & Home Assistant integration
+
+The Wyoming protocol cannot carry seed/volume options from Home Assistant, so they are
+server-side runtime settings instead:
+
+```bash
+curl -X POST http://<host>:8180/settings \
+  -H "X-API-Token: $DOTSTTS_API_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"seed": 42, "gain_db": 6}'    # seed null = random again
+```
+
+Changes apply to every following synthesis (Wyoming and HTTP) and survive restarts.
+
+To control them from Home Assistant, install the bundled custom integration via HACS:
+HACS → custom repositories → add this repo as *Integration* → install *Wyoming dots.tts* →
+restart HA → add the integration with the server host, port `8180`, and the API token.
+It creates `number.wyoming_dots_tts_seed` (−1 = random) and `number.wyoming_dots_tts_gain`
+(dB slider) entities.
 
 ## Startup warmup
 

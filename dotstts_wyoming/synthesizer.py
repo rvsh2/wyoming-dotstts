@@ -62,6 +62,7 @@ class DotsTtsSynthesizer:
         language: str | None = None,
         normalize_text: bool = False,
         optimize: bool = False,
+        gain_db: float = 0.0,
     ) -> None:
         self.model_name = model_name
         self.default_voice = default_voice
@@ -75,6 +76,7 @@ class DotsTtsSynthesizer:
         self.language = language
         self.normalize_text = normalize_text
         self.optimize = optimize
+        self.gain_db = gain_db
         self.backend = "dots.tts"
         self._runtime = None
         self._async_lock: asyncio.Lock | None = None
@@ -128,6 +130,22 @@ class DotsTtsSynthesizer:
     def available_voices(self) -> list[str]:
         return self.speaker_store.profile_names()
 
+    def runtime_settings(self) -> dict:
+        """Settings adjustable at runtime (via the HTTP management API)."""
+        return {"seed": self.seed, "gain_db": self.gain_db}
+
+    def apply_runtime_settings(self, settings: dict) -> None:
+        if "seed" in settings:
+            seed = settings["seed"]
+            self.seed = int(seed) if seed is not None else None
+        if "gain_db" in settings:
+            self.gain_db = float(settings["gain_db"])
+
+    def _apply_gain(self, audio: np.ndarray) -> np.ndarray:
+        if not self.gain_db:
+            return audio
+        return audio * np.float32(10.0 ** (self.gain_db / 20.0))
+
     def health_payload(self) -> dict:
         return {
             "status": "ok" if self.is_loaded() else "loading",
@@ -140,6 +158,7 @@ class DotsTtsSynthesizer:
             "guidance_scale": self.guidance_scale,
             "seed": self.seed,
             "language": self.language,
+            "gain_db": self.gain_db,
             "normalize_text": self.normalize_text,
             "optimize": self.optimize,
             "backend": self.backend,
@@ -218,7 +237,7 @@ class DotsTtsSynthesizer:
         result = self._runtime.generate(text=text, **runtime_kwargs)
 
         sample_rate = int(result.get("sample_rate", getattr(self._runtime, "sample_rate", DEFAULT_SAMPLE_RATE)))
-        audio = self._tensor_to_float_array(result["audio"])
+        audio = self._apply_gain(self._tensor_to_float_array(result["audio"]))
 
         return SynthesisResult(
             audio=audio,
@@ -246,4 +265,4 @@ class DotsTtsSynthesizer:
         self._apply_seed(self._seed_for_options(options))
         sample_rate = int(getattr(self._runtime, "sample_rate", DEFAULT_SAMPLE_RATE))
         for chunk in self._runtime.generate_stream(text=text, **runtime_kwargs):
-            yield self._tensor_to_float_array(chunk), sample_rate
+            yield self._apply_gain(self._tensor_to_float_array(chunk)), sample_rate

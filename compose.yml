@@ -13,8 +13,9 @@ services:
     networks:
       - bridge-network
     volumes:
-      - ./data/models:/data/models
-      - ./data/speakers:/data/speakers
+      # Whole /data is a mount so runtime settings (/data/settings.json)
+      # survive container recreation, not just restarts.
+      - ./data:/data
     deploy:
       resources:
         reservations:
